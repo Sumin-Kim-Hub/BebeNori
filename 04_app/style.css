@@ -1,0 +1,491 @@
+/* ============================================================
+   BebeNori Design System v7.1
+   🐛 BugFix: 사이드바 토글(☰) 버튼 복구
+   - header 전체를 숨기지 않고 배경만 노란색으로 처리
+   - stToolbar(배포 버튼)만 display:none
+   - 토글 버튼을 흰색 ☰ 스타일로 강제 지정
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+/* ── 0. CSS 변수 ─────────────────────────────────────────────── */
+:root {
+    --yellow  : #F2B705;
+    --yellow-l: #FFF9C4;
+    --yellow-d: #C49400;
+    --blue    : #6B9DD4;
+    --blue-l  : #E8F1FB;
+    --cream   : #FEFCF3;
+    --text    : #222222;
+    --text-s  : #777777;
+    --radius  : 18px;
+    --shadow  : 0 4px 18px rgba(0, 0, 0, 0.07);
+}
+
+/* ── 1. 전역 폰트 & 리셋 ─────────────────────────────────────── */
+html, body, [data-testid="stAppViewContainer"] * {
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    -webkit-font-smoothing: antialiased;
+    box-sizing: border-box;
+}
+
+/* ── 2. 앱 배경: 하늘색 그리드 패턴 (스크롤 고정) ────────────── */
+.stApp {
+    background-color: var(--cream) !important;
+    background-image:
+        repeating-linear-gradient(
+            rgba(107, 157, 212, 0.17) 0px, transparent 1px,
+            transparent 38px, rgba(107, 157, 212, 0.17) 38px
+        ),
+        repeating-linear-gradient(
+            90deg,
+            rgba(107, 157, 212, 0.17) 0px, transparent 1px,
+            transparent 38px, rgba(107, 157, 212, 0.17) 38px
+        ) !important;
+    background-attachment: fixed !important;
+    min-height: 100vh;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ★ 핵심 버그픽스 ★
+   header 전체를 display:none 하면 사이드바 토글도 사라짐!
+   → 배경색만 노란색으로 바꾸고, display는 절대 건드리지 않음
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── 3. 헤더: 노란색 배경 (display 속성 변경 절대 금지) ─────── */
+header[data-testid="stHeader"] {
+    background: linear-gradient(90deg, #F2B705 0%, #F5C84A 100%) !important;
+    box-shadow: 0 3px 18px rgba(242, 183, 5, 0.38) !important;
+    backdrop-filter: none !important;
+    /* display, visibility, opacity 절대 건드리지 않음 */
+}
+
+/* 헤더 중앙 BEBENORI 로고 (pseudo-element) */
+header[data-testid="stHeader"]::before {
+    content: '🌙  BEBENORI';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Fredoka One', cursive !important;
+    font-size: 1.45rem;
+    color: #FFFFFF;
+    letter-spacing: 0.06em;
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.14);
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 1;
+}
+
+/* ── 4. stToolbar만 숨김 (Deploy 버튼 등 우측 메뉴) ─────────── */
+/* ★ stToolbar만! header 전체는 절대 숨기지 않음 ★ */
+[data-testid="stToolbar"] {
+    display: none !important;
+}
+
+/* ── 5. 사이드바 토글(☰) 버튼 — 흰색으로 확실히 표시 ─────── */
+/*
+ * Streamlit이 렌더링하는 토글 버튼 셀렉터 (버전마다 다를 수 있으므로 전방위 타겟팅)
+ * layout="centered" 일 때 header 내부에 위치함
+ */
+
+/* 방법 A: collapsed control wrapper */
+[data-testid="stSidebarCollapsedControl"] {
+    position: relative;
+    z-index: 999;
+}
+[data-testid="stSidebarCollapsedControl"] button {
+    background: rgba(255, 255, 255, 0.22) !important;
+    border: 2px solid rgba(255, 255, 255, 0.55) !important;
+    border-radius: 10px !important;
+    color: #FFFFFF !important;
+}
+[data-testid="stSidebarCollapsedControl"] button:hover {
+    background: rgba(255, 255, 255, 0.38) !important;
+    border-color: #FFFFFF !important;
+}
+[data-testid="stSidebarCollapsedControl"] button svg {
+    fill: #FFFFFF !important;
+    color: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+/* 방법 B: header 내부 버튼 전체 (kind="header" 속성) */
+header[data-testid="stHeader"] button[kind="header"],
+header[data-testid="stHeader"] [data-testid="stBaseButton-header"] {
+    background: rgba(255, 255, 255, 0.22) !important;
+    border: 2px solid rgba(255, 255, 255, 0.55) !important;
+    border-radius: 10px !important;
+    color: #FFFFFF !important;
+}
+header[data-testid="stHeader"] button[kind="header"] svg,
+header[data-testid="stHeader"] [data-testid="stBaseButton-header"] svg {
+    fill: #FFFFFF !important;
+    color: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+/* 방법 C: header 내 모든 버튼 (최후 보루 — 광범위 타겟) */
+header[data-testid="stHeader"] button {
+    color: #FFFFFF !important;
+}
+header[data-testid="stHeader"] button svg {
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
+}
+
+/* ── 6. 메인 컨텐츠 너비 ─────────────────────────────────────── */
+.main .block-container {
+    max-width: 760px !important;
+    padding-left: 1.4rem !important;
+    padding-right: 1.4rem !important;
+    padding-top: 1.6rem !important;
+    padding-bottom: 7rem !important;
+    margin: 0 auto !important;
+}
+
+/* ── 7. 사이드바 ─────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(160deg, #FFFEF9 0%, #FFF8E1 100%) !important;
+    border-right: 1.5px solid rgba(242, 183, 5, 0.35) !important;
+}
+[data-testid="stSidebar"] > div:first-child { padding-top: 1rem; }
+
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+    border: 1px solid rgba(242, 183, 5, 0.3) !important;
+    border-radius: 12px !important;
+    background: #FFFFFF !important;
+    margin-bottom: 6px !important;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    font-weight: 700 !important;
+    font-size: 0.84rem !important;
+    color: #5C4000 !important;
+}
+
+/* ── 8. 채팅 말풍선 ──────────────────────────────────────────── */
+[data-testid="stChatMessage"] {
+    padding: 1rem 1.2rem !important;
+    border-radius: var(--radius) !important;
+    margin-bottom: 0.85rem !important;
+    animation: bubbleIn 0.22s ease-out;
+}
+@keyframes bubbleIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 사용자 말풍선 */
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+    background: linear-gradient(135deg, #FFF9C4 0%, #FFF3D0 100%) !important;
+    border: 1.5px solid #FFE082 !important;
+    box-shadow: 0 2px 10px rgba(242, 183, 5, 0.12) !important;
+}
+
+/* AI 말풍선 */
+[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) {
+    background: #FFFFFF !important;
+    border: 1.5px solid #EEEEEE !important;
+    box-shadow: var(--shadow) !important;
+}
+
+/* ── 9. 버튼 시스템 ─────────────────────────────────────────── */
+.stButton > button {
+    background: #FFFFFF !important;
+    border: 1.5px solid #FFE082 !important;
+    color: #5C4000 !important;
+    border-radius: 20px !important;
+    font-weight: 600 !important;
+    font-size: 0.84rem !important;
+    padding: 0.48rem 0.9rem !important;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    line-height: 1.4 !important;
+}
+.stButton > button:hover {
+    background: linear-gradient(135deg, #FFF9C4, #FFFBEB) !important;
+    border-color: var(--yellow) !important;
+    color: #8A6000 !important;
+    box-shadow: 0 4px 14px rgba(242, 183, 5, 0.22) !important;
+    transform: translateY(-1px) !important;
+}
+.stButton > button:active { transform: translateY(0) !important; }
+
+/* Primary 버튼 */
+button[kind="primary"] {
+    background: linear-gradient(135deg, #F2B705, #E8A800) !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    font-family: 'Fredoka One', cursive !important;
+    font-size: 0.95rem !important;
+    font-weight: 400 !important;
+    letter-spacing: 0.03em !important;
+    box-shadow: 0 4px 14px rgba(242, 183, 5, 0.38) !important;
+}
+button[kind="primary"]:hover {
+    box-shadow: 0 7px 24px rgba(242, 183, 5, 0.48) !important;
+    transform: translateY(-2px) !important;
+}
+
+/* Coming Soon 버튼 */
+.coming-soon-btn > button {
+    background: #F7F7F7 !important;
+    border: 1.5px dashed #CCCCCC !important;
+    color: #AAAAAA !important;
+    cursor: not-allowed !important;
+    font-size: 0.8rem !important;
+}
+.coming-soon-btn > button:hover {
+    transform: none !important;
+    box-shadow: none !important;
+    background: #F7F7F7 !important;
+    border-color: #CCCCCC !important;
+    color: #AAAAAA !important;
+}
+
+/* ── 10. 링크 버튼 ───────────────────────────────────────────── */
+[data-testid="stLinkButton"] > a {
+    background: #FFFFFF !important;
+    border: 1.5px solid #FFE082 !important;
+    color: #5C4000 !important;
+    border-radius: 14px !important;
+    font-weight: 600 !important;
+    font-size: 0.79rem !important;
+    padding: 0.38rem 0.65rem !important;
+    text-decoration: none !important;
+    transition: all 0.2s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+[data-testid="stLinkButton"] > a:hover {
+    background: var(--yellow-l) !important;
+    border-color: var(--yellow) !important;
+    color: #8A6000 !important;
+    box-shadow: 0 4px 12px rgba(242, 183, 5, 0.2) !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ── 11. 채팅 입력창 — PPT 블루 배경 ────────────────────────── */
+[data-testid="stBottom"] {
+    background: linear-gradient(90deg, #6B9DD4 0%, #5A8EC4 100%) !important;
+    padding: 10px 14px 14px !important;
+}
+[data-testid="stChatInput"] textarea {
+    border-radius: 22px !important;
+    border: 2px solid rgba(255, 255, 255, 0.65) !important;
+    background: rgba(255, 255, 255, 0.96) !important;
+    font-size: 0.91rem !important;
+    padding: 0.75rem 1.1rem !important;
+    color: var(--text) !important;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+[data-testid="stChatInput"] textarea:focus {
+    border-color: #FFFFFF !important;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.32) !important;
+    outline: none !important;
+}
+[data-testid="stChatInput"] textarea::placeholder { color: #888888 !important; }
+[data-testid="stChatInput"] button {
+    background: var(--yellow) !important;
+    border-radius: 50% !important;
+}
+
+/* ── 12. 스피너 ─────────────────────────────────────────────── */
+.stSpinner > div { border-top-color: var(--yellow) !important; }
+[data-testid="stSpinner"] p {
+    color: var(--yellow-d) !important;
+    font-weight: 700 !important;
+    font-size: 0.87rem !important;
+}
+
+/* ── 13. Expander ───────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    border: 1px solid rgba(242, 183, 5, 0.3) !important;
+    border-radius: 14px !important;
+    background: #FFFFFF !important;
+    overflow: hidden !important;
+    margin-bottom: 6px !important;
+}
+[data-testid="stExpander"] summary {
+    font-weight: 700 !important;
+    font-size: 0.86rem !important;
+    color: #5C4000 !important;
+    padding: 0.65rem 1rem !important;
+}
+[data-testid="stExpander"] summary:hover { background: #FFFBEB !important; }
+
+/* ── 14. 지도 & 구분선 ──────────────────────────────────────── */
+[data-testid="stMap"] {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    border: 1.5px solid rgba(107, 157, 212, 0.35) !important;
+}
+hr {
+    border: none !important;
+    border-top: 1.5px dashed rgba(242, 183, 5, 0.45) !important;
+    margin: 0.7rem 0 !important;
+}
+
+/* ── 15. 비활성 버튼 (채팅 기록) ────────────────────────────── */
+button[disabled] {
+    background: #FFF9EE !important;
+    border: 1px solid rgba(242, 183, 5, 0.35) !important;
+    color: #8A6A00 !important;
+    border-radius: 12px !important;
+    font-size: 0.77rem !important;
+    opacity: 1 !important;
+    text-align: left !important;
+    cursor: default !important;
+}
+
+/* ── 16. 추천 카드 — 영수증 스타일 ─────────────────────────── */
+.reco-card {
+    background: #FFFFFF;
+    border-radius: var(--radius);
+    padding: 16px 15px 12px;
+    margin-bottom: 10px;
+    border: 1.5px solid rgba(242, 183, 5, 0.45);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.07);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+    position: relative;
+    overflow: hidden;
+    min-height: 420px;
+    display: flex;
+    flex-direction: column;
+}
+.reco-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #F2B705, #F5C842, #6B9DD4);
+    border-radius: 18px 18px 0 0;
+}
+.reco-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 40px rgba(242, 183, 5, 0.17);
+}
+
+.receipt-icon { text-align: center; font-size: 1.7rem; margin-bottom: 4px; }
+.receipt-dashed {
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    color: #CCCCCC;
+    text-align: center;
+    overflow: hidden;
+    white-space: nowrap;
+    margin: 5px 0;
+}
+.reco-badge-row {
+    display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0;
+}
+.badge {
+    padding: 3px 9px; border-radius: 20px;
+    font-size: 0.7rem; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 2px;
+}
+.badge.clean   { background: #E3F2FD; color: #1565C0; }
+.badge.safe    { background: #E8F5E9; color: #2E7D32; }
+.badge.parking { background: #EDE7F6; color: #512DA8; }
+.badge.transit { background: #E0F7FA; color: #00838F; }
+.badge.default { background: #FFF8E1; color: #E65100; }
+
+.reco-title {
+    font-family: 'Fredoka One', cursive;
+    font-size: 1.03rem;
+    color: var(--text);
+    margin: 5px 0 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+}
+.reco-addr {
+    font-size: 0.76rem; color: #999999; margin-bottom: 8px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.receipt-row {
+    display: flex; justify-content: space-between;
+    font-size: 0.77rem; color: var(--text-s); margin: 3px 0;
+}
+.receipt-label { font-weight: 600; }
+.receipt-value { color: var(--text); font-weight: 700; }
+
+.tip-box {
+    background: linear-gradient(135deg, #FFFBEB, #FFF9E0);
+    border-left: 3px solid var(--yellow);
+    padding: 9px 12px;
+    border-radius: 0 8px 8px 0;
+    margin: 10px 0;
+    flex-grow: 1;
+}
+.tip-title   { font-weight: 700; color: #92400E; font-size: 0.76rem; margin-bottom: 3px; }
+.tip-content { color: #78350F; font-size: 0.8rem; line-height: 1.5; }
+.card-divider { border: none; border-top: 1.5px dashed #EEEEEE; margin: 8px 0; }
+
+/* ── 17. 웰컴 화면 ───────────────────────────────────────────── */
+.welcome-title {
+    font-family: 'Fredoka One', cursive;
+    text-align: center;
+    font-size: 1.6rem;
+    color: var(--yellow);
+    margin: 8px 0 4px;
+    letter-spacing: 0.02em;
+    text-shadow: 0 2px 10px rgba(242, 183, 5, 0.2);
+}
+.welcome-subtitle {
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #444444;
+    margin: 6px 0 22px;
+    letter-spacing: -0.01em;
+}
+.welcome-caption {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--blue);
+    margin-top: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* ── 18. AI 이모 라벨 ────────────────────────────────────────── */
+.ai-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--yellow-d);
+    margin: 0 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ── 19. 신뢰도 대시보드 ─────────────────────────────────────── */
+.trust-row { margin: 5px 0; }
+.trust-meta {
+    display: flex; justify-content: space-between;
+    font-size: 0.73rem; font-weight: 700; color: #5C4000; margin-bottom: 3px;
+}
+.trust-track { background: #F0F0F0; border-radius: 6px; height: 7px; overflow: hidden; }
+.trust-fill  {
+    height: 100%; border-radius: 6px;
+    background: linear-gradient(90deg, var(--yellow), #F5C842);
+}
+.trust-fill.blue { background: linear-gradient(90deg, var(--blue), #8BB8E0); }
+
+/* ── 20. 스크롤바 ────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(242, 183, 5, 0.4); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--yellow); }
+
+/* ── 21. 반응형 ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding-left: 0.7rem !important;
+        padding-right: 0.7rem !important;
+    }
+    .reco-card { min-height: 360px; }
+    .reco-title { font-size: 0.93rem; }
+    header[data-testid="stHeader"]::before { font-size: 1.1rem; }
+}

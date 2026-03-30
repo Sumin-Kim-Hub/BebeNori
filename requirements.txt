@@ -1,0 +1,26 @@
+# =========================
+# LLM / RAG
+# =========================
+langchain-core>=0.3.83,<2
+langchain-community>=0.3.31,<0.5
+langchain-openai>=0.3.33,<2
+langchain-chroma>=0.2.6,<2
+chromadb==1.5.5
+sentence-transformers>=5.1.2,<6
+
+# =========================
+# 환경 변수 / 데이터
+# =========================
+python-dotenv>=1.0,<2
+pandas>=2.2,<3
+requests>=2.32,<3
+beautifulsoup4>=4.14,<5
+lxml>=6.0,<7
+
+# =========================
+# 데이터 수집
+# =========================
+selenium>=4.36,<5
+webdriver-manager>=4.0,<5
+
+

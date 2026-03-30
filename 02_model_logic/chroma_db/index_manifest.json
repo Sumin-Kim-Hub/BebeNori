@@ -1,0 +1,27 @@
+{
+  "collection": "bebenori_v5",
+  "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
+  "fingerprint": "2342196824af29b9b9835a2645334b653d025e786184104b8c5cacf6d1591901",
+  "tracked_files": {
+    "backend_core_py": {
+      "path": "C:\\Users\\gusqh\\Desktop\\BebeNori\\02_model_logic\\backend_core.py",
+      "sha256": "bb8d6f4216225fca52aec35ccb455cc98e401a3cc12a49fe64d20700e0215497"
+    },
+    "data_loader_py": {
+      "path": "C:\\Users\\gusqh\\Desktop\\BebeNori\\01_data_prep\\data_loader.py",
+      "sha256": "99d427fedbd029154646970fb97eb0a82652a35a1062fe37c79143047541e438"
+    },
+    "features_csv": {
+      "path": "C:\\Users\\gusqh\\Desktop\\BebeNori\\01_data_prep\\outputs\\preprocessed\\place_features.csv",
+      "sha256": "ca6c79b574165265a0d37abfabe46e0e1d4615b3ce3992abe22cc856fbe46f9c"
+    },
+    "places_csv": {
+      "path": "C:\\Users\\gusqh\\Desktop\\BebeNori\\01_data_prep\\outputs\\preprocessed\\places.csv",
+      "sha256": "856fddbd667083da687fbf2829edd52510dbc3abd548fe50ffa54948054018c1"
+    },
+    "reviews_csv": {
+      "path": "C:\\Users\\gusqh\\Desktop\\BebeNori\\01_data_prep\\outputs\\preprocessed\\review_docs.csv",
+      "sha256": "7b14730dc00520f1c1a3aa40ff805186d1a9239ce27a82eaaa126b3205cc9dcc"
+    }
+  }
+}

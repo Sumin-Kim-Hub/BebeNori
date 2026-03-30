@@ -22,5 +22,5 @@ lxml>=6.0,<7
 # =========================
 selenium>=4.36,<5
 webdriver-manager>=4.0,<5
-
-
+torch
+torchvision

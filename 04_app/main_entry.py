@@ -1,6 +1,9 @@
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import streamlit as st
 from pathlib import Path
-import sys
 import pandas as pd
 
 # 1. 경로 설정 및 라이브러리 임포트 (기존 유지)

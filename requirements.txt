@@ -29,7 +29,7 @@ webdriver-manager>=4.0,<5
 # =========================
 streamlit>=1.43,<2
 pydeck>=0.8.0,<1
-
 # ===========================
 torch
 torchvision
+pysqlite3-binary

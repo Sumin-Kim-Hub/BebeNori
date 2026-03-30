@@ -1,176 +1,114 @@
-# ============================================================
-# 파일: 04_app/main_entry.py
-# 역할: BebeNori 메인 진입점 v7.1
-# ============================================================
-
-import random
 import streamlit as st
-import pandas as pd
-import sys
 from pathlib import Path
+import sys
+import pandas as pd
 
-# ──────────────────────────────────────────────────────────────
-# 1. 경로 설정 — 절대 수정 금지
-# ──────────────────────────────────────────────────────────────
-_APP_DIR     = Path(__file__).resolve().parent
+# 1. 경로 설정 및 라이브러리 임포트 (기존 유지)
+_APP_DIR = Path(__file__).resolve().parent
 _PROJECT_DIR = _APP_DIR.parent
-_DATA_PREP   = _PROJECT_DIR / "01_data_prep"
-_MODEL_LOGIC = _PROJECT_DIR / "02_model_logic"
+for folder in ["01_data_prep", "02_model_logic"]:
+    path = str(_PROJECT_DIR / folder)
+    if path not in sys.path: 
+        sys.path.insert(0, path)
 
-for _p in [str(_DATA_PREP), str(_MODEL_LOGIC)]:
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
-
-import ui_components  # noqa: E402
-
-# ──────────────────────────────────────────────────────────────
-# 2. 페이지 설정
-# ──────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="베베노리 — 이모삼촌의 키즈카페 추천",
-    page_icon="🌙",
-    layout="centered",
-    initial_sidebar_state="auto",
+import ui_components
+from data_loader import load_places, load_dev
+from backend_core import (
+    get_llm_chain, load_or_create_vectorstore, 
+    rag_retrieve, build_context, gen_answer, gen_followup_answer
 )
+from followup_resolver import resolve_followup, format_doc_lookup_answer
 
-# ── CSS 적용 ─────────────────────────────────────────────────
+st.set_page_config(page_title="BEBENORI", layout="centered")
+
+# 2. CSS 로드
 try:
-    with open(_APP_DIR / "style.css", "r", encoding="utf-8") as _f:
-        st.markdown(f"<style>{_f.read()}</style>", unsafe_allow_html=True)
-except FileNotFoundError:
+    with open(_APP_DIR / "style.css", "r", encoding="utf-8") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+except: 
     pass
 
-# ── Google Fonts 명시 로드 ───────────────────────────────────
-st.markdown(
-    '<link rel="preconnect" href="https://fonts.googleapis.com">'
-    '<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">',
-    unsafe_allow_html=True,
-)
-
-# ──────────────────────────────────────────────────────────────
-# 3. 랜덤 육아 꿀팁 (로딩 대기 시간 관리)
-# ──────────────────────────────────────────────────────────────
-_LOADING_TIPS: list[str] = [
-    "💡 서울형 키즈카페는 매월 1일·16일에 예약이 열려요!",
-    "💡 18개월 아기는 소근육 발달이 활발한 시기예요.",
-    "💡 방문 전 주차 공간을 미리 확인하면 스트레스가 줄어요!",
-    "💡 아이가 처음 가는 곳은 오전 10~11시가 가장 한적해요.",
-    "💡 키즈카페 직원에게 인기 장난감 위치를 먼저 물어보세요!",
-    "💡 유아용 실내화를 챙기면 더 편하게 놀 수 있어요.",
-    "💡 서울형 키즈카페 어린이 2시간 평균 3,000원! 사설 대비 1/10이에요.",
-    "💡 36개월 이상 아이는 역할놀이 공간에서 집중력이 폭발해요.",
-    "💡 이유식 중인 아기라면 별도 수유실이 있는지 꼭 확인하세요!",
-    "💡 베베노리 데이터는 서울시 공공 데이터로 검증됐어요. ✅",
-    "💡 24개월 미만 전용 존이 있는 곳에서 더 안전하게 놀 수 있어요.",
-    "💡 볼풀 소독 주기를 직접 물어보면 위생 수준을 바로 알 수 있어요!",
-]
-
-def _get_tip() -> str:
-    return random.choice(_LOADING_TIPS)
-
-
-# ──────────────────────────────────────────────────────────────
-# 4. 백엔드 초기화 (캐싱)
-# ──────────────────────────────────────────────────────────────
+# 3. 데이터 및 모델 초기화 (기존 버전 유지)
 @st.cache_resource(show_spinner=False)
-def initialize_backend():
-    try:
-        from data_loader import load_places, load_dev           # type: ignore
-        from backend_core import load_or_create_vectorstore, get_llm_chain  # type: ignore
+def init_all_systems():
+    # 실제 구현에서는 try-except 등으로 데이터를 가져옴
+    # 여기서는 데이터가 있다고 가정
+    df = load_places()
+    dev_df = load_dev()
+    vectorstore = load_or_create_vectorstore(df)
+    llm_chain = get_llm_chain()
+    return df, dev_df, vectorstore, llm_chain
 
-        df          = load_places()
-        dev_df      = load_dev()
-        vectorstore = load_or_create_vectorstore(df)
-        chain       = get_llm_chain()
-        return df, dev_df, vectorstore, chain
-    except Exception as exc:
-        st.error(f"백엔드 초기화 실패: {exc}")
-        return pd.DataFrame(), None, None, None
+df, dev_df, vectorstore, llm_chain = init_all_systems()
 
-with st.spinner("🌙 베베노리 이모삼촌이 준비 중이에요…"):
-    df, dev_df, vectorstore, chain = initialize_backend()
+# 4. 세션 관리 초기화
+if "sessions" not in st.session_state:
+    st.session_state.sessions = [{
+        "id": 0, "title": "첫 번째 대화",
+        "chat_history": [{
+            "role": "assistant", 
+            "content": "반가워요! 베베노리 이모예요 🐰\n우리 아이와 함께 가기 좋은 **서울형 키즈카페**를 찾아 드릴게요!",
+            "source_docs": [],
+            "turn_meta": {}
+        }]
+    }]
+if "current_session_id" not in st.session_state:
+    st.session_state.current_session_id = 0
 
-# ──────────────────────────────────────────────────────────────
-# 5. 세션 상태 초기화
-# ──────────────────────────────────────────────────────────────
-if "chat_history"  not in st.session_state:
-    st.session_state.chat_history  = []
-if "current_input" not in st.session_state:
-    st.session_state.current_input = ""
+current_session = st.session_state.sessions[st.session_state.current_session_id]
 
-# ──────────────────────────────────────────────────────────────
-# 6. 사이드바
-# ──────────────────────────────────────────────────────────────
-ui_components.render_sidebar(df, st.session_state.chat_history)
+# 5. UI 출력
+ui_components.render_sidebar(df)
+for chat in current_session["chat_history"]:
+    st.markdown(ui_components.get_message_html(chat["role"], chat["content"]), unsafe_allow_html=True)
 
-# ──────────────────────────────────────────────────────────────
-# 7. 메인 채팅 화면
-# ──────────────────────────────────────────────────────────────
-if not st.session_state.chat_history:
-    ui_components.render_gpt_style_welcome()
+# 6. 채팅 입력 및 RAG 로직 ( turn_meta 저장 누락 해결 및 기존 로직 유지 )
+if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요! 🐣"):
+    if len(current_session["chat_history"]) <= 1: 
+        current_session["title"] = prompt[:12] + "..."
+    
+    # 사용자 메시지 저장 및 출력
+    current_session["chat_history"].append({"role": "user", "content": prompt})
+    st.markdown(ui_components.get_message_html("user", prompt), unsafe_allow_html=True)
 
-for chat in st.session_state.chat_history:
-    if chat["role"] == "user":
-        with st.chat_message("user", avatar="👪"):
-            st.markdown(chat["content"])
-    else:
-        with st.chat_message("assistant", avatar="🐰"):
-            ui_components.render_ai_label()
-            st.markdown(chat["content"])
-            if chat.get("source_docs"):
-                ui_components.render_recommendation_cards(chat["source_docs"])
+    with st.chat_message("assistant", avatar=None):
+        with st.spinner("베베노리 이모가 조카를 위한 최적의 장소를 찾는 중... ✨"):
+            # ✅ 팀원들이 만든 followup_resolver 연동
+            resolution = resolve_followup(current_session["chat_history"], prompt)
+            intent = resolution.get("intent")
+            age_sel = st.session_state.get("sb_age", "")
+            
+            response_text, source_pids = "", []
+            
+            if intent == "doc_lookup":
+                # 단순 정보 조회
+                response_text = format_doc_lookup_answer(resolution.get("target_doc"), resolution.get("lookup_field"))
+            elif intent == "place_detail":
+                # 특정 장소 상세 설명
+                target_doc = resolution.get("target_doc")
+                pids = [target_doc.get("place_id")] if target_doc else []
+                ctx = build_context(df, dev_df, pids, age_sel=age_sel, query=prompt)
+                response_text = gen_followup_answer(llm_chain, prompt, ctx, resolution.get("last_answer", ""))
+            else:
+                # 새로운 검색 또는 추가 조건 검색
+                search_query = resolution.get("standalone_query", prompt)
+                source_pids = rag_retrieve(vectorstore, search_query, df)
+                ctx = build_context(df, dev_df, source_pids, age_sel=age_sel, query=search_query)
+                
+                # 대화가 길어지면 주아님의 후속 답변 프롬프트 사용
+                if intent == "refine_search" or len(current_session["chat_history"]) > 3:
+                    response_text = gen_followup_answer(llm_chain, prompt, ctx, resolution.get("last_answer", ""))
+                else:
+                    response_text = gen_answer(llm_chain, prompt, ctx)
 
-# ──────────────────────────────────────────────────────────────
-# 8. 채팅 입력 처리 및 RAG 파이프라인
-# ──────────────────────────────────────────────────────────────
-raw_prompt = st.chat_input(
-    "이모삼촌에게 무엇이든 물어보세요! (예: 강남구 18개월 아기 갈만한 곳 🐣)"
-)
-
-if st.session_state.current_input:
-    prompt = st.session_state.current_input
-    st.session_state.current_input = ""
-else:
-    prompt = raw_prompt
-
-if prompt:
-    st.session_state.chat_history.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👪"):
-        st.markdown(prompt)
-
-    with st.chat_message("assistant", avatar="🐰"):
-        ui_components.render_ai_label()
-
-        with st.spinner(_get_tip()):
-            try:
-                from backend_core import rag_retrieve, build_context, gen_answer  # type: ignore
-
-                pids = rag_retrieve(vectorstore, prompt, df=df, n=3)
-                ctx  = build_context(df, dev_df, pids, query=prompt)
-                ans  = gen_answer(chain, prompt, ctx)
-
-                st.markdown(ans)
-
-                docs: list[dict] = []
-                if not df.empty and pids:
-                    docs = df[df["place_id"].isin(pids)].to_dict("records")
-                if docs:
-                    ui_components.render_recommendation_cards(docs)
-
-                st.session_state.chat_history.append(
-                    {"role": "assistant", "content": ans, "source_docs": docs}
-                )
-
-            except Exception as exc:
-                error_msg = (
-                    "이모삼촌이 정보를 찾는 데 문제가 생겼어요. 😥\n\n"
-                    "잠시 후 다시 질문해 주시겠어요?"
-                )
-                st.markdown(error_msg)
-                st.session_state.chat_history.append(
-                    {"role": "assistant", "content": error_msg}
-                )
-                with st.expander("🔧 오류 상세 (개발용)"):
-                    st.exception(exc)
-
+        # AI 답변 화면 출력
+        st.markdown(ui_components.get_message_html("assistant", response_text), unsafe_allow_html=True)
+        
+        # ✅ 최종 답변 및 메타데이터를 세션에 저장 (꼬리질문 버그 해결 핵심)
+        current_session["chat_history"].append({
+            "role": "assistant", "content": response_text,
+            "turn_meta": {"intent": intent, "standalone_query": resolution.get("standalone_query", prompt)},
+            "source_docs": df[df["place_id"].isin(source_pids)].to_dict("records") if source_pids else resolution.get("source_docs", [])
+        })
+        
     st.rerun()

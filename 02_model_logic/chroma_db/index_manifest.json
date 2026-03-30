@@ -1,11 +1,11 @@
 {
   "collection": "bebenori_v5",
   "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2",
-  "fingerprint": "2342196824af29b9b9835a2645334b653d025e786184104b8c5cacf6d1591901",
+  "fingerprint": "2d9e29a259431a1ff09162a2d04ebf938f6363c2dd84cd6959cfbb27a3875048",
   "tracked_files": {
     "backend_core_py": {
       "path": "C:\\Users\\gusqh\\Desktop\\BebeNori\\02_model_logic\\backend_core.py",
-      "sha256": "bb8d6f4216225fca52aec35ccb455cc98e401a3cc12a49fe64d20700e0215497"
+      "sha256": "46be841ab9d076b21281ccab3130b067023d590c4e2ccd16769923cae184a6df"
     },
     "data_loader_py": {
       "path": "C:\\Users\\gusqh\\Desktop\\BebeNori\\01_data_prep\\data_loader.py",

@@ -35,7 +35,12 @@ from data_loader import (
     park_short,
 )
 # ⭐️ 분리한 프롬프트 템플릿 임포트
-from prompt_templates import SYSTEM_PROMPT, get_main_recommendation_prompt, get_card_recommendation_prompt
+from prompt_templates import (
+    SYSTEM_PROMPT,
+    get_main_recommendation_prompt,
+    get_followup_answer_prompt,
+    get_card_recommendation_prompt,
+)
 
 # LangChain 관련 임포트
 from langchain_openai import ChatOpenAI
@@ -607,6 +612,19 @@ def gen_answer(chain, query: str, ctx: str) -> str:
         return "조건에 맞는 장소를 찾지 못했어요. 다른 조건으로 다시 시도해 주세요."
 
     user_msg = get_main_recommendation_prompt(query, ctx)
+    return _safe_invoke(chain, user_msg)
+
+
+def gen_followup_answer(
+    chain,
+    query: str,
+    ctx: str,
+    last_answer: str = "",
+) -> str:
+    if not ctx.strip():
+        return "추가로 안내할 만한 정보가 지금 데이터에는 없어요."
+
+    user_msg = get_followup_answer_prompt(query, ctx, last_answer=last_answer)
     return _safe_invoke(chain, user_msg)
 
 def gen_card_rec(chain, name: str, addr: str, feats: list, review: str, age_sel: str = "") -> str:

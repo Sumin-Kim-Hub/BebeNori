@@ -79,14 +79,19 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             resolution = resolve_followup(current_session["chat_history"], prompt)
             intent = resolution.get("intent")
             
-            # 🚀 [앱단 오버라이드 1] 짧은 질문 오분류 제어 (어디, 추천 등의 단어가 없을 때만 꼬리로 인식)
-            short_detail_keywords = ["정수기", "전자레인지", "와이파이", "화장실", "기저귀", "식당", "매점", "수유실", "있어", "돼", "되나", "가능", "주차", "예약", "요금", "가격", "얼마", "시간"]
+            # [앱단 오버라이드 1] 질문 가로채기 안전 강화
+            short_detail_keywords = [
+                "정수기", "전자레인지", "와이파이", "화장실", "기저귀", "식당", "매점", "수유실", 
+                "있어", "돼", "되나", "가능", "주차", "예약", "요금", "가격", "얼마", "시간", 
+                "시설", "상세", "자세히", "알려줘", "어때", "어떤"
+            ]
             search_avoid_keywords = ["어디", "추천", "찾아", "알려", "다른", "곳", "있는"]
             
-            if intent in ["fresh_search", "refine_search"] and len(prompt) <= 30:
+            if intent in ["fresh_search", "refine_search"] and len(prompt) <= 35:
                 if any(k in prompt for k in short_detail_keywords) and not any(s in prompt for s in search_avoid_keywords):
                     if resolution.get("source_docs"):
                         intent = "place_detail"
+                        resolution["target_doc"] = resolution["source_docs"][0]
 
             age_sel = ""
             
@@ -98,7 +103,6 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             
             if intent == "doc_lookup":
                 response_text = format_doc_lookup_answer(resolution.get("target_doc"), resolution.get("lookup_field")) or "관련 정보가 부족해요."
-                # 🚀 [오류 방지] 과거 대화 리스트 원본이 망가지지 않도록 list()로 복사
                 saved_source_docs = list(resolution.get("source_docs", []))
                 if resolution.get("target_doc"): active_place_id = resolution["target_doc"].get("place_id")
             
@@ -107,7 +111,13 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 pids = [target_doc.get("place_id")] if target_doc else []
                 ctx = build_context(df, dev_df, pids, age_sel=age_sel, query=prompt)
                 
-                # 🚀 [앱단 오버라이드 2] 정보 확인 시 로봇 같은 답변 방지 및 거절 멘트 자연스럽게 수정
+                # 정수기 확인을 위해 백엔드에서 짤린 특징 100% 강제 주입
+                if target_doc:
+                    place_row = df[df["place_id"] == target_doc.get("place_id")]
+                    if not place_row.empty:
+                        full_feats = ", ".join(place_row.iloc[0].get("features", []))
+                        ctx += f"\n\n[앱에서 강제 주입한 전체 편의시설 정보]: {full_feats}\n"
+
                 custom_msg = (
                     f"참고 데이터:\n{ctx}\n\n"
                     f"질문: '{prompt}'\n\n"
@@ -122,7 +132,6 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 except Exception:
                     response_text = "정보를 확인하는 데 문제가 발생했어요."
                 
-                # 🚀 [오류 방지] 리스트 복사
                 saved_source_docs = list(resolution.get("source_docs", []))
                 if target_doc: active_place_id = target_doc.get("place_id")
             
@@ -139,7 +148,7 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 saved_source_docs = _ordered_source_docs(df, source_pids)
                 active_place_id, active_place_rank = infer_answer_place(saved_source_docs, response_text)
 
-            # 🚀 [수정 포인트 4] 엉뚱한 카드 방지: intent 종류와 무관하게 선택된 장소(active_place)를 무조건 맨 앞(index 0)으로 강제 이동
+            # 엉뚱한 카드 방지 강제 정렬 로직
             if active_place_id and saved_source_docs:
                 for i, doc in enumerate(saved_source_docs):
                     if doc.get("place_id") == active_place_id:

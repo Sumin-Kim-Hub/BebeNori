@@ -3,6 +3,13 @@ from pathlib import Path
 import sys
 import pandas as pd
 
+# 🌟 배포 환경(SQLite 버전 문제) 대응: chromadb 로드 전 실행 필수
+try:
+    import pysqlite3
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except ImportError:
+    pass
+
 # 1. 경로 설정 및 연동 유지
 _APP_DIR = Path(__file__).resolve().parent
 _PROJECT_DIR = _APP_DIR.parent
@@ -20,16 +27,16 @@ from backend_core import (
 )
 from followup_resolver import resolve_followup, format_doc_lookup_answer
 
-# ✅ 반응형 설정: auto
+# ✅ 반응형 및 레이아웃 설정
 st.set_page_config(page_title="BEBENORI", layout="centered", initial_sidebar_state="auto")
 
-# 2. CSS 로드
+# 2. CSS 로드 (하단 여백 및 입력창 디자인)
 try:
     with open(_APP_DIR / "style.css", "r", encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 except: pass
 
-# 3. 데이터 및 모델 초기화
+# 3. 데이터 및 모델 초기화 (에러 방지용 캐싱)
 @st.cache_resource(show_spinner=False)
 def init_all_systems():
     df = load_places()
@@ -40,7 +47,7 @@ def init_all_systems():
 
 df, dev_df, vectorstore, llm_chain = init_all_systems()
 
-# 4. 세션 관리 초기화 (이모티콘 제거 완벽 반영)
+# 4. 세션 관리 (이모티콘 제거 및 초기화)
 if "sessions" not in st.session_state:
     st.session_state.sessions = [{
         "id": 0, "title": "첫 번째 대화",
@@ -55,7 +62,7 @@ if "current_session_id" not in st.session_state:
 
 current_session = st.session_state.sessions[st.session_state.current_session_id]
 
-def _ordered_source_docs(df: pd.DataFrame, pids: list[str]) -> list[dict]:
+def _ordered_source_docs(df: pd.DataFrame, pids: list) -> list:
     if not pids: return []
     rows = df[df["place_id"].isin(pids)].to_dict("records")
     by_pid = {row.get("place_id"): row for row in rows}
@@ -66,7 +73,7 @@ ui_components.render_sidebar(df)
 for chat in current_session["chat_history"]:
     st.markdown(ui_components.get_message_html(chat["role"], chat["content"], source_docs=chat.get("source_docs", [])), unsafe_allow_html=True)
 
-# 6. 채팅 입력 및 통합 RAG 로직 (꼬리질문 추론 포함)
+# 6. 채팅 입력 및 RAG 로직 (v3.31 통합 로직)
 if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
     if len(current_session["chat_history"]) <= 1: 
         current_session["title"] = prompt[:12] + "..."
@@ -78,7 +85,7 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
         with st.spinner("최적의 장소를 찾는 중... ✨"):
             resolution = resolve_followup(current_session["chat_history"], prompt)
             intent = resolution.get("intent")
-            age_sel = "" # 수민님의 요청으로 고정
+            age_sel = "" # 수민님의 요청에 따른 고정값
             
             response_text, source_pids = "", []
             saved_source_docs = []
@@ -86,6 +93,7 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             active_place_rank = resolution.get("target_doc_rank", 0)
             search_slots = dict(resolution.get("search_slots", {}) or {})
             
+            # 인텐트 기반 처리
             if intent == "doc_lookup":
                 response_text = format_doc_lookup_answer(resolution.get("target_doc"), resolution.get("lookup_field")) or "관련 정보가 부족해요."
                 saved_source_docs = resolution.get("source_docs", [])
@@ -108,12 +116,11 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                     response_text = gen_answer(llm_chain, search_query, ctx)
                 
                 saved_source_docs = _ordered_source_docs(df, source_pids)
-                # 💡 답변 텍스트에서 언급된 매장 추론 (팀원 로직)
                 active_place_id, active_place_rank = infer_answer_place(saved_source_docs, response_text)
 
         st.markdown(ui_components.get_message_html("assistant", response_text, saved_source_docs), unsafe_allow_html=True)
         
-        # 💡 팀원 메타데이터 + 수민 UI 데이터를 함께 저장
+        # 메타데이터 저장 및 세션 업데이트
         current_session["chat_history"].append({
             "role": "assistant", "content": response_text,
             "turn_meta": {

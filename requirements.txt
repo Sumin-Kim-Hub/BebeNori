@@ -29,7 +29,12 @@ webdriver-manager>=4.0,<5
 # =========================
 streamlit>=1.43,<2
 pydeck>=0.8.0,<1
+plotly>=5.0,<6
+
+# ===========================
+# 기타 의존성 (배포용 조건부 설치 포함)
 # ===========================
 torch
 torchvision
-pysqlite3-binary
+# 윈도우 환경 설치 에러 방지를 위해 리눅스에서만 설치하도록 설정
+pysqlite3-binary; sys_platform == 'linux'

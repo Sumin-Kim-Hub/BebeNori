@@ -74,11 +74,23 @@ REFINE_HINTS = (
 
 def resolve_followup(chat_history: list[dict], prompt: str) -> dict:
     prompt = (prompt or "").strip()
+    last_turn_state = _get_last_turn_state(chat_history)
+    last_search_state = _get_last_search_state(chat_history)
     last_assistant = _get_last_assistant_with_docs(chat_history)
-    last_user_query = _get_last_search_query(chat_history)
+    last_user_query = last_search_state.get("standalone_query") or _get_last_search_query(chat_history)
     source_docs = last_assistant.get("source_docs", []) if last_assistant else []
-    target_doc_rank = _extract_target_doc_rank(prompt)
-    target_doc = _pick_doc_by_rank(source_docs, target_doc_rank)
+    explicit_target_rank = _extract_target_doc_rank(prompt)
+    target_doc_rank = (
+        explicit_target_rank
+        if explicit_target_rank is not None
+        else last_turn_state.get("active_place_rank", 0)
+    )
+    target_doc = _pick_doc(
+        source_docs,
+        target_doc_rank,
+        active_place_id=last_turn_state.get("active_place_id"),
+        prefer_active=explicit_target_rank is None,
+    )
     lookup_field = _detect_doc_lookup_field(prompt)
     has_followup_marker = _has_followup_marker(prompt)
     likely_followup = _is_likely_followup(
@@ -96,6 +108,9 @@ def resolve_followup(chat_history: list[dict], prompt: str) -> dict:
         "source_docs": source_docs,
         "target_doc": None,
         "last_answer": last_assistant.get("content", "") if last_assistant else "",
+        "active_place_id": last_turn_state.get("active_place_id"),
+        "retrieved_pids": last_search_state.get("retrieved_pids", []),
+        "search_slots": _extract_search_slots(prompt),
     }
 
     if not source_docs:
@@ -110,14 +125,22 @@ def resolve_followup(chat_history: list[dict], prompt: str) -> dict:
     if _is_place_detail(prompt) and (likely_followup or target_doc_rank > 0):
         resolution["intent"] = "place_detail"
         resolution["target_doc"] = target_doc
+        if target_doc and target_doc.get("place_id"):
+            resolution["active_place_id"] = target_doc.get("place_id")
         return resolution
 
     if (
         (has_followup_marker and _has_refine_hint(prompt))
         or (_has_refine_hint(prompt) and explicit_search)
     ):
+        merged_slots = _merge_search_slots(last_search_state.get("search_slots", {}), prompt)
         resolution["intent"] = "refine_search"
-        resolution["standalone_query"] = _merge_queries(last_user_query, prompt)
+        resolution["search_slots"] = merged_slots
+        resolution["standalone_query"] = _merge_queries(
+            last_user_query,
+            prompt,
+            last_search_state.get("search_slots", {}),
+        )
         return resolution
 
     return resolution
@@ -180,6 +203,24 @@ def _get_last_user_query(chat_history: list[dict]) -> str:
 
 
 def _get_last_search_query(chat_history: list[dict]) -> str:
+    return _get_last_search_state(chat_history).get("standalone_query") or _get_last_user_query(chat_history)
+
+
+def _get_last_turn_state(chat_history: list[dict]) -> dict:
+    for chat in reversed(chat_history):
+        if chat.get("role") != "assistant":
+            continue
+        turn_meta = chat.get("turn_meta") or {}
+        if turn_meta:
+            return {
+                "active_place_id": turn_meta.get("active_place_id"),
+                "active_place_rank": int(turn_meta.get("active_place_rank", 0) or 0),
+                "search_slots": dict(turn_meta.get("search_slots", {}) or {}),
+            }
+    return {}
+
+
+def _get_last_search_state(chat_history: list[dict]) -> dict:
     for chat in reversed(chat_history):
         if chat.get("role") != "assistant":
             continue
@@ -187,17 +228,25 @@ def _get_last_search_query(chat_history: list[dict]) -> str:
         intent = turn_meta.get("intent")
         standalone_query = str(turn_meta.get("standalone_query", "")).strip()
         if intent in {"fresh_search", "refine_search"} and standalone_query:
-            return standalone_query
-    return _get_last_user_query(chat_history)
+            return {
+                "standalone_query": standalone_query,
+                "active_place_id": turn_meta.get("active_place_id"),
+                "active_place_rank": int(turn_meta.get("active_place_rank", 0) or 0),
+                "retrieved_pids": list(turn_meta.get("retrieved_pids", []) or []),
+                "search_slots": dict(turn_meta.get("search_slots", {}) or {}),
+            }
+    return {}
 
 
-def _extract_target_doc_rank(prompt: str) -> int:
+def _extract_target_doc_rank(prompt: str) -> Optional[int]:
     normalized = prompt.replace(" ", "")
     if "세번째" in normalized or "3번째" in normalized or "세번" in normalized:
         return 2
     if "두번째" in normalized or "2번째" in normalized or "두번" in normalized:
         return 1
-    return 0
+    if "첫번째" in normalized or "1번째" in normalized or "첫 번째" in prompt:
+        return 0
+    return None
 
 
 def _pick_doc_by_rank(source_docs: list[dict], rank: int) -> Optional[dict]:
@@ -206,6 +255,21 @@ def _pick_doc_by_rank(source_docs: list[dict], rank: int) -> Optional[dict]:
     if 0 <= rank < len(source_docs):
         return source_docs[rank]
     return source_docs[0]
+
+
+def _pick_doc(
+    source_docs: list[dict],
+    rank: int,
+    active_place_id: Optional[str] = None,
+    prefer_active: bool = False,
+) -> Optional[dict]:
+    if not source_docs:
+        return None
+    if prefer_active and active_place_id:
+        for doc in source_docs:
+            if doc.get("place_id") == active_place_id:
+                return doc
+    return _pick_doc_by_rank(source_docs, rank)
 
 
 def _detect_doc_lookup_field(prompt: str) -> Optional[str]:
@@ -253,28 +317,36 @@ def _has_refine_hint(prompt: str) -> bool:
     return any(keyword in normalized for keyword in REFINE_HINTS)
 
 
-def _merge_queries(last_query: str, prompt: str) -> str:
+def _merge_queries(last_query: str, prompt: str, last_slots: Optional[dict] = None) -> str:
     last_query = last_query.strip()
     prompt = prompt.strip()
     if not last_query:
         return prompt
 
-    prior_district = _extract_district(last_query)
+    last_slots = last_slots or {}
+    prior_district = last_slots.get("district") or _extract_district(last_query)
     new_district = _extract_district(prompt)
+    prior_age = last_slots.get("age_expr") or _extract_age_expr(last_query)
+    new_age = _extract_age_expr(prompt)
 
+    merged = last_query
     if new_district:
-        merged = last_query
         if prior_district:
             merged = re.sub(prior_district, new_district, merged)
             merged = re.sub(prior_district.replace("구", ""), new_district.replace("구", ""), merged)
         elif new_district not in merged:
             merged = f"{new_district} {merged}"
-        cleaned_prompt = _remove_district_tokens(prompt, new_district)
-        if cleaned_prompt:
-            return f"{merged} 추가 조건: {cleaned_prompt}".strip()
-        return merged.strip()
 
-    return f"{last_query} 추가 조건: {prompt}"
+    if new_age:
+        if prior_age:
+            merged = merged.replace(prior_age, new_age)
+        elif new_age not in merged:
+            merged = f"{new_age} {merged}"
+
+    cleaned_prompt = _clean_refine_prompt(prompt, district=new_district, age_expr=new_age)
+    if cleaned_prompt:
+        return f"{merged} 추가 조건: {cleaned_prompt}".strip()
+    return merged.strip()
 
 
 def _clean_value(value: object) -> str:
@@ -295,6 +367,33 @@ def _extract_district(text: str) -> str:
     return ""
 
 
+def _extract_age_expr(text: str) -> str:
+    normalized = text.strip()
+    month_match = re.search(r"\d+\s*개월", normalized)
+    if month_match:
+        return month_match.group(0).replace(" ", "")
+    year_match = re.search(r"(?:만\s*)?\d+\s*(?:세|살)", normalized)
+    if year_match:
+        return re.sub(r"\s+", "", year_match.group(0))
+    return ""
+
+
+def _extract_search_slots(text: str) -> dict:
+    return {
+        "district": _extract_district(text),
+        "age_expr": _extract_age_expr(text),
+    }
+
+
+def _merge_search_slots(last_slots: dict, prompt: str) -> dict:
+    merged = dict(last_slots or {})
+    prompt_slots = _extract_search_slots(prompt)
+    for key, value in prompt_slots.items():
+        if value:
+            merged[key] = value
+    return merged
+
+
 def _remove_district_tokens(text: str, district: str) -> str:
     cleaned = text
     variants = {district, district.replace("구", ""), f"{district}로", f"{district}으로"}
@@ -302,5 +401,18 @@ def _remove_district_tokens(text: str, district: str) -> str:
     variants.update({f"{short}로", f"{short}으로"})
     for token in sorted((v for v in variants if v), key=len, reverse=True):
         cleaned = cleaned.replace(token, " ")
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _clean_refine_prompt(prompt: str, district: str = "", age_expr: str = "") -> str:
+    cleaned = prompt
+    if district:
+        cleaned = _remove_district_tokens(cleaned, district)
+    if age_expr:
+        cleaned = cleaned.replace(age_expr, " ")
+    for token in ("그럼", "그러면", "대신", "말고", "다른", "다시", "바꾸면", "바꾸고", "바꿔"):
+        cleaned = cleaned.replace(token, " ")
+    cleaned = re.sub(r"[?!.]+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned

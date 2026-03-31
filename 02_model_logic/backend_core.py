@@ -106,6 +106,17 @@ def _matches_spaced_phrase(query: str, term: object, whole: bool = False) -> boo
     return re.search(pattern, _safe_text(query)) is not None
 
 
+def _find_spaced_phrase_index(query: str, term: object, whole: bool = False) -> int:
+    compact = _compact_spaces(term)
+    if not compact:
+        return -1
+    pattern = _spaced_term_pattern(compact)
+    if whole:
+        pattern = rf"(?<![가-힣A-Za-z0-9]){pattern}(?![가-힣A-Za-z0-9])"
+    match = re.search(pattern, _safe_text(query))
+    return match.start() if match else -1
+
+
 def _safe_float(value):
     try:
         if value is None or pd.isna(value):
@@ -151,6 +162,98 @@ def _build_landmark_aliases(term: str) -> list[str]:
             stripped = stripped[len(prefix):].strip()
             aliases.add(stripped)
     return sorted(alias for alias in aliases if len(_compact_spaces(alias)) >= 2)
+
+
+def _strip_parenthetical(text: str) -> str:
+    return re.sub(r"\([^)]*\)", " ", _safe_text(text)).strip()
+
+
+def _extract_parenthetical_terms(text: str) -> list[str]:
+    return list(dict.fromkeys(part.strip() for part in re.findall(r"\(([^)]*)\)", _safe_text(text)) if part.strip()))
+
+
+def _extract_place_fragments(name: str) -> list[str]:
+    text = _strip_parenthetical(name)
+    if not text:
+        return []
+
+    text = re.sub(r"서울형\s*키즈카페", " ", text)
+    text = re.sub(r"서울형키즈카페", " ", text)
+    text = re.sub(r"시립", " ", text)
+    tokens = re.split(r"[()/,\s]+", text)
+
+    fragments = []
+    for token in tokens:
+        token = token.strip()
+        if len(_compact_spaces(token)) < 2:
+            continue
+        if token in GENERIC_PLACE_TOKENS:
+            continue
+        if token in DISTRICTS or token.endswith("구"):
+            continue
+        fragments.append(token)
+    return list(dict.fromkeys(fragments))
+
+
+def _build_place_name_match_terms(place_name: str) -> list[tuple[int, str, bool]]:
+    candidates = []
+    full_name = _safe_text(place_name)
+    stripped_name = _strip_parenthetical(full_name)
+    for term in (full_name, stripped_name):
+        if term:
+            candidates.append((0, term, False))
+
+    for term in _extract_parenthetical_terms(full_name):
+        candidates.append((1, term, False))
+
+    alias_sources = [full_name, stripped_name, *_extract_parenthetical_terms(full_name)]
+    for source in alias_sources:
+        for alias in _build_landmark_aliases(source):
+            candidates.append((2, alias, True))
+
+    for fragment in _extract_place_fragments(full_name):
+        candidates.append((3, fragment, True))
+
+    deduped = []
+    seen = set()
+    for priority, term, whole in candidates:
+        compact = _compact_spaces(term)
+        if len(compact) < 2 or compact in seen:
+            continue
+        seen.add(compact)
+        deduped.append((priority, term, whole))
+    return deduped
+
+
+def infer_answer_place(source_docs: list[dict], response_text: str) -> tuple[Optional[str], int]:
+    if not source_docs:
+        return None, 0
+
+    fallback_doc = source_docs[0] if source_docs else {}
+    fallback_pid = _safe_text(fallback_doc.get("place_id", ""))
+    answer = _safe_text(response_text)
+    if not answer:
+        return (fallback_pid or None), 0
+
+    best_match = None
+    for idx, doc in enumerate(source_docs):
+        pid = _safe_text(doc.get("place_id", ""))
+        place_name = _safe_text(doc.get("place_name", ""))
+        if not pid or not place_name:
+            continue
+
+        for priority, term, whole in _build_place_name_match_terms(place_name):
+            position = _find_spaced_phrase_index(answer, term, whole=whole)
+            if position < 0:
+                continue
+            score = (priority, position, -len(_compact_spaces(term)), idx)
+            if best_match is None or score < best_match[0]:
+                best_match = (score, pid, idx)
+
+    if best_match:
+        return best_match[1], best_match[2]
+
+    return (fallback_pid or None), 0
 
 
 def _extract_address_keywords(address: str) -> list[str]:

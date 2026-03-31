@@ -1,5 +1,5 @@
 /* ============================================================
-   BebeNori Master UI v4.0 - True Floating Input & Table Fix
+   BebeNori Master UI v8.3 - Bottom Margin Optimized
    ============================================================ */
 @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
@@ -16,56 +16,75 @@ header[data-testid="stHeader"]::before {
     font-family: 'Fredoka One', cursive !important;
     font-size: 2.2rem; color: #FFFFFF; pointer-events: none;
 }
-.sidebar-logo { font-family: 'Fredoka One', cursive !important; font-size: 2rem !important; color: white !important; }
-
-/* ── 2. 채팅 레이아웃 ── */
-.main .block-container { max-width: 720px !important; padding-top: 5rem !important; padding-bottom: 8rem !important; }
-
-/* ✅ 완벽한 제미나이 스타일 플로팅 입력창 (숨겨진 내부 div까지 투명화) */
-div[data-testid="stBottom"],
-div[data-testid="stBottom"] > div {
-    background: transparent !important;
-    background-color: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
+.sidebar-logo { 
+    font-family: 'Fredoka One', cursive !important; 
+    font-size: 2.8rem !important; 
+    color: #F2B705 !important; 
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.05);
 }
 
-/* ✅ 채팅창 본체 크기 확대 및 공중에 띄우기 */
+/* 사이드바 여백 및 평면화 */
+[data-testid="stSidebar"] { min-width: 280px !important; }
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"],
+[data-testid="stSidebar"] .block-container { padding-top: 0rem !important; }
+
+[data-testid="stSidebar"] .stExpander {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+[data-testid="stSidebar"] .stExpander summary {
+    padding-left: 0px !important;
+    color: #B28704 !important; 
+    font-weight: 800 !important;
+}
+
+/* ── 2. 채팅 레이아웃 및 하단 가림막 ── */
+.main .block-container { max-width: 720px !important; padding-top: 5rem !important; padding-bottom: 8rem !important; }
+
+/* ✅ 하단 배경 영역: 아래쪽 패딩을 20px -> 5px로 줄여서 전체적으로 밑으로 내림 */
+div[data-testid="stBottom"] {
+    background-color: #F2B705 !important; 
+    padding-top: 15px !important;
+    padding-bottom: 5px !important; 
+    z-index: 100 !important;
+}
+div[data-testid="stBottom"] > div { background-color: transparent !important; }
+
+/* ✅ 채팅 입력창: 하단 마진을 20px -> 10px로 줄여서 바닥과 더 가깝게 밀착 */
 div[data-testid="stChatInput"] {
-    max-width: 760px !important; /* 기존보다 넓게 확대 */
-    margin: 0 auto 20px auto !important; /* 바닥에서 살짝 띄움 */
+    max-width: 680px !important; 
+    width: calc(100% - 2rem) !important; 
+    margin: 0 auto 10px auto !important; 
     background-color: #FFFFFF !important; 
     border-radius: 35px !important; 
     border: 1px solid #DDDDDD !important; 
     box-shadow: 0 8px 30px rgba(0,0,0,0.12) !important; 
-    padding: 6px !important; /* 창을 더 도톰하게 */
 }
 
-/* ── 3. 말풍선 및 정렬 ── */
-.bubble-container { display: flex; align-items: flex-start; margin-bottom: 18px; width: 100%; }
+/* ── 3. 카카오톡 스타일 말풍선 ── */
+.bubble-container { display: flex; align-items: flex-start; margin-bottom: 18px; width: 100%; gap: 12px; }
 .user-msg { justify-content: flex-end !important; } 
-.ai-msg { justify-content: flex-start !important; }
+.ai-msg { justify-content: flex-start !important; } 
 
-.bubble { border-radius: 18px; padding: 14px 18px; line-height: 1.6; box-shadow: 0 2px 10px rgba(0,0,0,0.06); max-width: 78%; }
-.ai-bubble { background-color: #FFFFFF !important; color: #222222 !important; border-top-left-radius: 4px !important; margin-left: 10px; }
-.user-bubble { background-color: #FEE500 !important; color: #3B1E1E !important; border-top-right-radius: 4px !important; margin-right: 10px; }
+.bubble { border-radius: 18px; padding: 14px 18px; line-height: 1.6; box-shadow: 0 2px 10px rgba(0,0,0,0.06); max-width: 78%; word-break: keep-all; }
+.ai-bubble { background-color: #FFFFFF !important; color: #222222 !important; border-top-left-radius: 4px !important; }
+.user-bubble { background-color: #FEE500 !important; color: #3B1E1E !important; border-top-right-radius: 4px !important; }
 
-/* ── 4. 예약 링크 버튼 스타일 ── */
-/* 일반적인 텍스트 사이의 예약 버튼 */
-.ai-bubble a {
-    display: inline-block; 
-    background-color: #6B9DD4; color: #FFFFFF !important;
-    text-decoration: none !important; 
-    padding: 7px 16px; border-radius: 20px; 
-    font-weight: 700; font-size: 0.9rem; 
-    margin-top: 10px; box-shadow: 0 2px 6px rgba(107, 157, 212, 0.3);
+/* ── 4. 사이드바 버튼 스타일링 (왼쪽 정렬 보강) ── */
+[data-testid="stSidebar"] button[kind="primary"] {
+    background-color: #F2B705 !important; color: white !important; border: none !important; font-weight: bold;
 }
-
-/* 표(Table) 내부에 들어갔을 때 튀지 않도록 아담하게 축소 */
-.ai-bubble table a {
-    padding: 4px 10px !important;
-    margin-top: 0 !important;
-    font-size: 0.8rem !important;
-    border-radius: 8px !important;
-    box-shadow: none !important;
+[data-testid="stSidebar"] button[kind="secondary"] {
+    background-color: transparent !important; border: none !important; box-shadow: none !important;
+    color: #B28704 !important; font-weight: 700; text-align: left !important; justify-content: flex-start !important;
+    padding-left: 5px !important; display: flex !important; width: 100% !important;
+}
+[data-testid="stSidebar"] button[kind="secondary"] * {
+    text-align: left !important;
+    justify-content: flex-start !important;
+    font-size: 0.95rem !important;
+}
+[data-testid="stSidebar"] button[kind="secondary"]:hover {
+    background-color: rgba(242, 183, 5, 0.08) !important;
 }

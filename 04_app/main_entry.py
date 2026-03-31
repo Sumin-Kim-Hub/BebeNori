@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 import pandas as pd
 
+# 1. 경로 설정 및 연동 유지
 _APP_DIR = Path(__file__).resolve().parent
 _PROJECT_DIR = _APP_DIR.parent
 for folder in ["01_data_prep", "02_model_logic"]:
@@ -19,13 +20,16 @@ from backend_core import (
 )
 from followup_resolver import resolve_followup, format_doc_lookup_answer
 
+# ✅ 반응형 설정: auto
 st.set_page_config(page_title="BEBENORI", layout="centered", initial_sidebar_state="auto")
 
+# 2. CSS 로드
 try:
     with open(_APP_DIR / "style.css", "r", encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 except: pass
 
+# 3. 데이터 및 모델 초기화
 @st.cache_resource(show_spinner=False)
 def init_all_systems():
     df = load_places()
@@ -36,12 +40,13 @@ def init_all_systems():
 
 df, dev_df, vectorstore, llm_chain = init_all_systems()
 
+# 4. 세션 관리 초기화 (이모티콘 제거 완벽 반영)
 if "sessions" not in st.session_state:
     st.session_state.sessions = [{
         "id": 0, "title": "첫 번째 대화",
         "chat_history": [{
             "role": "assistant", 
-            "content": "반가워요! 베베노리 이모예요\n우리 아이와 함께 가기 좋은 서울형 키즈카페를 찾아 드릴게요!",
+            "content": "반가워요! 베베노리 이모예요 🐰\n우리 아이와 함께 가기 좋은 서울형 키즈카페를 찾아 드릴게요!",
             "source_docs": [], "turn_meta": {}
         }]
     }]
@@ -56,10 +61,12 @@ def _ordered_source_docs(df: pd.DataFrame, pids: list[str]) -> list[dict]:
     by_pid = {row.get("place_id"): row for row in rows}
     return [by_pid[pid] for pid in pids if pid in by_pid]
 
+# 5. UI 출력
 ui_components.render_sidebar(df)
 for chat in current_session["chat_history"]:
     st.markdown(ui_components.get_message_html(chat["role"], chat["content"], source_docs=chat.get("source_docs", [])), unsafe_allow_html=True)
 
+# 6. 채팅 입력 및 통합 RAG 로직 (꼬리질문 추론 포함)
 if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
     if len(current_session["chat_history"]) <= 1: 
         current_session["title"] = prompt[:12] + "..."
@@ -68,10 +75,10 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
     st.markdown(ui_components.get_message_html("user", prompt), unsafe_allow_html=True)
 
     with st.chat_message("assistant", avatar=None):
-        with st.spinner("최적의 장소를 찾는 중..."):
+        with st.spinner("최적의 장소를 찾는 중... ✨"):
             resolution = resolve_followup(current_session["chat_history"], prompt)
             intent = resolution.get("intent")
-            age_sel = "" 
+            age_sel = "" # 수민님의 요청으로 고정
             
             response_text, source_pids = "", []
             saved_source_docs = []
@@ -101,10 +108,12 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                     response_text = gen_answer(llm_chain, search_query, ctx)
                 
                 saved_source_docs = _ordered_source_docs(df, source_pids)
+                # 💡 답변 텍스트에서 언급된 매장 추론 (팀원 로직)
                 active_place_id, active_place_rank = infer_answer_place(saved_source_docs, response_text)
 
         st.markdown(ui_components.get_message_html("assistant", response_text, saved_source_docs), unsafe_allow_html=True)
         
+        # 💡 팀원 메타데이터 + 수민 UI 데이터를 함께 저장
         current_session["chat_history"].append({
             "role": "assistant", "content": response_text,
             "turn_meta": {

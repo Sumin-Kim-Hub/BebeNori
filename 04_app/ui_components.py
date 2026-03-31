@@ -17,8 +17,9 @@ TAG_MAP = {
     "play_zone": "#다양한놀이존",
     "cafe": "#카페시설",
     "stroller_parking": "#유모차보관소",
-    "care_service_available": "#돌봄서비스",
-    "careserviceavailable": "#돌봄서비스"
+    # ✅ 누락된 영문 태그 추가: careserviceavailable -> #돌봄서비스
+    "careserviceavailable": "#돌봄서비스",
+    "care_service_available": "#돌봄서비스"
 }
 
 # 고화질 대체 이미지
@@ -41,7 +42,7 @@ def render_sidebar(df: pd.DataFrame):
             new_id = len(st.session_state.sessions)
             st.session_state.sessions.append({
                 "id": new_id, "title": f"새 대화 {new_id + 1}",
-                "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모예요\n궁금한 키즈카페가 있나요?", "source_docs": []}]
+                "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모예요 🐰\n궁금한 키즈카페가 있나요?", "source_docs": []}]
             })
             st.session_state.current_session_id = new_id
             st.rerun()
@@ -50,8 +51,7 @@ def render_sidebar(df: pd.DataFrame):
         st.markdown("<p style='font-size:0.8rem; font-weight:bold; color:#ccc; margin-bottom: 5px;'>최근 대화 목록</p>", unsafe_allow_html=True)
         for i in range(len(st.session_state.sessions)-1, -1, -1):
             sess = st.session_state.sessions[i]
-            label = sess['title']
-            if st.button(label, key=f"nav_btn_{i}", width='stretch'):
+            if st.button(sess['title'], key=f"nav_btn_{i}", width='stretch'):
                 st.session_state.current_session_id = i
                 st.rerun()
 
@@ -109,15 +109,8 @@ def get_message_html(role, content, source_docs=None):
             address = doc.get("address", "주소 정보 없음")
             link = doc.get("booking_url", "https://yeyak.seoul.go.kr/")
             
-            # ✅ 데이터 연동 복구 및 Streamlit 보안 필터 우회
-            # 1) 팀원이 준 파일의 여러 컬럼명을 모두 검색하여 가장 정확한 이미지 연동
-            img_url = ""
-            for k in ["image_url", "img_url", "image", "thumbnail", "url"]:
-                val = str(doc.get(k, "")).strip()
-                if val and val.lower() != "nan" and val.startswith("http"):
-                    img_url = val
-                    break
-            if not img_url:
+            img_url = doc.get("image_url", "")
+            if not img_url or str(img_url).lower() == 'nan':
                 img_url = DEFAULT_IMG
             
             raw_feats = doc.get("features", [])
@@ -127,13 +120,14 @@ def get_message_html(role, content, source_docs=None):
             tags_html = ""
             for f in raw_feats[:5]:
                 f_key = f.strip().lower()
+                # ✅ 사전에 영어 매핑이 추가되어 한글로만 나옵니다.
                 f_korean = TAG_MAP.get(f_key, f"#{f_key.replace('_','')}")
                 if f_korean != "#nan" and f_korean != "#":
                     tags_html += f"<span style='color: #6B9DD4; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; background-color: #F4F8FD; margin-right: 5px; margin-bottom: 5px; display: inline-block; white-space: nowrap;'>{f_korean}</span>"
 
-            # ✅ CSS background 대신 순수 <img> 태그 사용 (Streamlit 삭제 필터 회피)
+            # ✅ onerror가 지워지는 문제 해결을 위해 단순화
             cards_html += f"""
-            <div style="border: 2px solid #FDF4D6; border-radius: 16px; overflow: hidden; background-color: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.06); width: 100%;">
+            <div style="border: 2px solid #FDF4D6; border-radius: 166px; overflow: hidden; background-color: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.06); width: 100%;">
                 <div style="position: relative; height: 160px; background-color: #EFEFEF;">
                     <img src="{img_url}" style="width: 100%; height: 100%; object-fit: cover;">
                     <div style="position: absolute; top: 12px; left: 12px;">

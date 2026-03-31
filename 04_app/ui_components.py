@@ -27,7 +27,7 @@ def render_sidebar(df: pd.DataFrame):
         st.markdown("""<div style="padding: 0px 0 20px 0; text-align: center;"><span class="sidebar-logo">BEBENORI</span><br><span style="color:#6B9DD4; font-size:0.85rem; font-weight: 800;">서울형 키즈카페 안심 가이드</span></div>""", unsafe_allow_html=True)
         if st.button("새로운 대화 시작", use_container_width=True, type="primary"):
             new_id = len(st.session_state.sessions)
-            st.session_state.sessions.append({"id": new_id, "title": f"새 대화 {new_id + 1}", "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모 삼촌이에요 🐰\n궁금한 키즈카페가 있나요?", "source_docs": []}]})
+            st.session_state.sessions.append({"id": new_id, "title": f"새 대화 {new_id + 1}", "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모삼촌이에요 🐰\n궁금한 키즈카페가 있나요?", "source_docs": []}]})
             st.session_state.current_session_id = new_id
             st.rerun()
         st.divider()
@@ -66,11 +66,16 @@ def render_sidebar(df: pd.DataFrame):
 
 def get_message_html(role, content, source_docs=None, intent=None):
     content = parse_markdown(content).replace('\n', '<br>')
-    icon, label, color = ("🐰", "베베노리<br>이모 삼촌", "#F2B705") if role == "assistant" else ("👪", "놀이메이트", "#6B9DD4")
+    
+    # 🚀 [수정 포인트 1] 이모삼촌 줄간격(line-height: 1.15) 축소, 노리메이트 귀여운 가족 그림 적용
+    ai_label = "<div style='line-height: 1.15; margin-top: 2px;'>베베노리<br>이모삼촌</div>"
+    user_icon = '<img src="https://img.icons8.com/color/48/family.png" style="width: 28px; height: 28px;">'
+    
+    icon, label, color = ("🐰", ai_label, "#F2B705") if role == "assistant" else (user_icon, "노리메이트", "#6B9DD4")
     cls = "ai" if role == "assistant" else "user"
     cards_html = ""
     
-    # 🚀 [수정 포인트] 정보 꼬리질문(place_detail)일 경우 아예 카드를 그리지 않음
+    # 🚀 [수정 포인트 2] 일반 꼬리질문(place_detail)일 경우 대형 카드 숨김
     if role == "assistant" and source_docs and intent != "place_detail":
         cards_html = "<div style='display: flex; flex-direction: column; gap: 15px; margin-top: 15px;'>"
         for doc in source_docs[:1]:
@@ -86,7 +91,6 @@ def get_message_html(role, content, source_docs=None, intent=None):
             if not img_url: img_url = DEFAULT_IMG
             
             if intent == "doc_lookup":
-                # 주차, 예약 등 명확한 기능성 미니 카드
                 cards_html += f"""
                 <div style="border: 1px solid #EFEFEF; border-radius: 12px; padding: 12px; background-color: #FAFAFA; box-shadow: 0 2px 8px rgba(0,0,0,0.04); width: 100%;">
                     <div style="font-size: 0.95rem; font-weight: 800; color: #333; margin-bottom: 8px; word-break: keep-all;">📍 {name}</div>
@@ -126,7 +130,6 @@ def get_message_html(role, content, source_docs=None, intent=None):
                 </div>
                 """
         
-        # 꼬리질문일 때는 "다음 장소 추천 문구"도 숨겨서 화면을 가장 깔끔하게 유지합니다.
         if len(source_docs) > 1 and intent not in ("doc_lookup", "place_detail"):
             next_place_name = source_docs[1].get("place_name", "다른 키즈카페")
             clean_next_name = next_place_name.replace("서울형 키즈카페", "").strip()
@@ -134,7 +137,8 @@ def get_message_html(role, content, source_docs=None, intent=None):
         
         cards_html += "</div>"
         
-    profile_html = f"""<div style="display: flex; flex-direction: column; align-items: center; min-width: 55px;"><div style="width: 42px; height: 42px; border-radius: 50%; background: white; border: 2px solid {color}; display: flex; justify-content: center; align-items: center;"><span style="font-size: 22px;">{icon}</span></div><div style="font-size: 0.6rem; font-weight: bold; color: {color if role=='user' else 'white'}; margin-top: 4px; text-align: center;">{label}</div></div>"""
+    # 🚀 [수정 포인트 3] 프로필 이름 글씨 색상(color: white) 강제 적용 및 이미지 정렬
+    profile_html = f"""<div style="display: flex; flex-direction: column; align-items: center; min-width: 55px;"><div style="width: 42px; height: 42px; border-radius: 50%; background: white; border: 2px solid {color}; display: flex; justify-content: center; align-items: center;"><span style="font-size: 22px; display: flex; align-items: center; justify-content: center;">{icon}</span></div><div style="font-size: 0.65rem; font-weight: bold; color: white; margin-top: 4px; text-align: center;">{label}</div></div>"""
     bubble_html = f'<div class="bubble {cls}-bubble">{content}{cards_html}</div>'
     
     display_content = bubble_html + profile_html if role == "user" else profile_html + bubble_html

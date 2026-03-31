@@ -47,7 +47,7 @@ if "sessions" not in st.session_state:
         "id": 0, "title": "첫 번째 대화",
         "chat_history": [{
             "role": "assistant", 
-            "content": "반가워요! 베베노리 이모 삼촌이에요 🐰\n우리 아이와 함께 가기 좋은 서울형 키즈카페를 찾아 드릴게요!",
+            "content": "반가워요! 베베노리 이모삼촌이에요 🐰\n우리 아이와 함께 가기 좋은 서울형 키즈카페를 찾아 드릴게요!",
             "source_docs": [], "turn_meta": {}
         }]
     }]
@@ -79,10 +79,14 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             resolution = resolve_followup(current_session["chat_history"], prompt)
             intent = resolution.get("intent")
             
-            # 🚀 [앱단 오버라이드 1] 모델 파일을 고치지 않고, 앱에서 짧은 확인 질문을 '꼬리질문(place_detail)'으로 강제 분류
-            short_detail_keywords = ["정수기", "전자레인지", "와이파이", "화장실", "기저귀", "식당", "매점", "수유실", "있어", "돼", "되나", "가능"]
-            if intent == "fresh_search" and len(prompt) <= 25 and any(k in prompt for k in short_detail_keywords):
-                intent = "place_detail"
+            # 🚀 [앱단 오버라이드 1] 짧은 질문 오분류 제어 (어디, 추천 등의 단어가 없을 때만 꼬리로 인식)
+            short_detail_keywords = ["정수기", "전자레인지", "와이파이", "화장실", "기저귀", "식당", "매점", "수유실", "있어", "돼", "되나", "가능", "주차", "예약", "요금", "가격", "얼마", "시간"]
+            search_avoid_keywords = ["어디", "추천", "찾아", "알려", "다른", "곳", "있는"]
+            
+            if intent in ["fresh_search", "refine_search"] and len(prompt) <= 30:
+                if any(k in prompt for k in short_detail_keywords) and not any(s in prompt for s in search_avoid_keywords):
+                    if resolution.get("source_docs"):
+                        intent = "place_detail"
 
             age_sel = ""
             
@@ -94,7 +98,8 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             
             if intent == "doc_lookup":
                 response_text = format_doc_lookup_answer(resolution.get("target_doc"), resolution.get("lookup_field")) or "관련 정보가 부족해요."
-                saved_source_docs = resolution.get("source_docs", [])
+                # 🚀 [오류 방지] 과거 대화 리스트 원본이 망가지지 않도록 list()로 복사
+                saved_source_docs = list(resolution.get("source_docs", []))
                 if resolution.get("target_doc"): active_place_id = resolution["target_doc"].get("place_id")
             
             elif intent == "place_detail":
@@ -102,7 +107,7 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 pids = [target_doc.get("place_id")] if target_doc else []
                 ctx = build_context(df, dev_df, pids, age_sel=age_sel, query=prompt)
                 
-                # 🚀 [앱단 오버라이드 2] 백엔드를 거치지 않고 직접 LLM에 '짧게 대답해!'라고 명령 전송
+                # 🚀 [앱단 오버라이드 2] 정보 확인 시 로봇 같은 답변 방지 및 거절 멘트 자연스럽게 수정
                 custom_msg = (
                     f"참고 데이터:\n{ctx}\n\n"
                     f"질문: '{prompt}'\n\n"
@@ -110,14 +115,15 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                     "이 질문은 방금 추천한 장소에 대한 '간단한 추가 정보 확인'이야.\n"
                     "인사말이나 추천 장소 이름을 반복하는 등 거창한 양식을 절대 쓰지 마!\n"
                     "묻는 말에만 1~2문장 내외로 아주 짧고 다정하게 대답해줘.\n"
-                    "데이터에 해당 내용이 없다면 '데이터 상으로는 별도로 확인되지 않아요. 가시기 전 센터에 문의해 보세요!'라고 솔직하게 말해줘."
+                    "데이터(Context)에 해당 내용이 없다면 지어내지 말고, '데이터 상으로는 안 보이네요😭 정확한 건 센터에 문의해 보시는 게 좋을 것 같아요!' 처럼 친근하고 솔직하게 모른다고 대답해줘."
                 )
                 try:
                     response_text = llm_chain.invoke({"user_message": custom_msg})
                 except Exception:
                     response_text = "정보를 확인하는 데 문제가 발생했어요."
                 
-                saved_source_docs = resolution.get("source_docs", [])
+                # 🚀 [오류 방지] 리스트 복사
+                saved_source_docs = list(resolution.get("source_docs", []))
                 if target_doc: active_place_id = target_doc.get("place_id")
             
             else:
@@ -133,12 +139,13 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 saved_source_docs = _ordered_source_docs(df, source_pids)
                 active_place_id, active_place_rank = infer_answer_place(saved_source_docs, response_text)
 
-                if active_place_id:
-                    for i, doc in enumerate(saved_source_docs):
-                        if doc.get("place_id") == active_place_id:
-                            active_doc = saved_source_docs.pop(i)
-                            saved_source_docs.insert(0, active_doc)
-                            break
+            # 🚀 [수정 포인트 4] 엉뚱한 카드 방지: intent 종류와 무관하게 선택된 장소(active_place)를 무조건 맨 앞(index 0)으로 강제 이동
+            if active_place_id and saved_source_docs:
+                for i, doc in enumerate(saved_source_docs):
+                    if doc.get("place_id") == active_place_id:
+                        active_doc = saved_source_docs.pop(i)
+                        saved_source_docs.insert(0, active_doc)
+                        break
 
         st.markdown(ui_components.get_message_html("assistant", response_text, saved_source_docs, intent=intent), unsafe_allow_html=True)
         

@@ -11,8 +11,14 @@ header[data-testid="stHeader"]::before {
     font-family: 'Fredoka One', cursive !important;
     font-size: 2.2rem; color: #FFFFFF; pointer-events: none;
 }
-.sidebar-logo { font-family: 'Fredoka One', cursive !important; font-size: 2.8rem !important; color: #F2B705 !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.05); }
-
+.sidebar-logo { 
+    font-family: 'Fredoka One', cursive !important; 
+    font-size: 2.2rem !important; /* 모바일에 맞게 크기 살짝 축소 */
+    color: #F2B705 !important; 
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.05); 
+    white-space: nowrap !important; /* ★ 강제 줄바꿈 방지 */
+    letter-spacing: -1px !important; /* 자간을 좁혀서 공간 확보 */
+}
 /* [수정 1] 사이드바 너비 강제 고정(min-width: 280px) 코드 삭제 -> 모바일 닫힘 에러 완벽 해결 */
 [data-testid="stSidebar"] [data-testid="stSidebarUserContent"], [data-testid="stSidebar"] .block-container { padding-top: 0rem !important; }
 [data-testid="stSidebar"] .stExpander { border: none !important; background: transparent !important; box-shadow: none !important; }

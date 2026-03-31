@@ -13,19 +13,20 @@ header[data-testid="stHeader"]::before {
 }
 .sidebar-logo { font-family: 'Fredoka One', cursive !important; font-size: 2.8rem !important; color: #F2B705 !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.05); }
 
-[data-testid="stSidebar"] { min-width: 280px !important; }
+/* [수정 1] 사이드바 너비 강제 고정(min-width: 280px) 코드 삭제 -> 모바일 닫힘 에러 완벽 해결 */
 [data-testid="stSidebar"] [data-testid="stSidebarUserContent"], [data-testid="stSidebar"] .block-container { padding-top: 0rem !important; }
 [data-testid="stSidebar"] .stExpander { border: none !important; background: transparent !important; box-shadow: none !important; }
 [data-testid="stSidebar"] .stExpander summary { padding-left: 0px !important; color: #B28704 !important; font-weight: 800 !important; }
 
-/* 메인 컨테이너 패딩 조절로 입력창 뒤 가림 현상 완화 */
-.main .block-container { max-width: 720px !important; padding-top: 5rem !important; padding-bottom: 6rem !important; }
+/* [수정 2] 메인 컨테이너 하단 패딩을 120px로 넉넉히 주어 마지막 말풍선이 하단바에 가리지 않도록 보호 */
+.main .block-container { max-width: 720px !important; padding-top: 5rem !important; padding-bottom: 120px !important; }
 
-/* 플로팅 입력창 배경 완벽 제거 및 하단 밀착 */
+/* [수정 3] 하단 입력창 배경을 앱 배경색(F2B705)과 동일하게 채워서 스크롤되는 대화내역을 카톡처럼 가려줌 */
 div[data-testid="stBottom"] {
-    background-color: transparent !important; 
-    padding-bottom: 0px !important; 
-    margin-bottom: -15px !important;
+    background-color: #F2B705 !important; 
+    padding-top: 15px !important;
+    padding-bottom: 15px !important; 
+    margin-bottom: 0px !important;
     z-index: 100 !important;
 }
 div[data-testid="stBottom"] > div { background-color: transparent !important; }
@@ -33,7 +34,7 @@ div[data-testid="stBottom"] > div { background-color: transparent !important; }
 div[data-testid="stChatInput"] {
     max-width: 680px !important; 
     width: calc(100% - 2rem) !important; 
-    margin: 0 auto 5px auto !important; 
+    margin: 0 auto 0px auto !important; 
     background-color: #FFFFFF !important; 
     border-radius: 35px !important; 
     border: 1px solid #DDDDDD !important; 

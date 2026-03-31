@@ -1,14 +1,9 @@
-/* ============================================================
-   BebeNori Master UI v8.4 - Bottom Margin & Tag Map Fixed
-   ============================================================ */
 @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap');
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
 
-/* ── 0. 전역 설정 ── */
 .stApp { background-color: #F2B705 !important; }
 html, body, div, p, span { font-family: 'Pretendard', sans-serif; }
 
-/* ── 1. 헤더 및 로고 ── */
 header[data-testid="stHeader"] { background-color: #F2B705 !important; height: 75px !important; }
 header[data-testid="stHeader"]::before {
     content: 'BEBENORI';
@@ -18,16 +13,14 @@ header[data-testid="stHeader"]::before {
 }
 .sidebar-logo { font-family: 'Fredoka One', cursive !important; font-size: 2.8rem !important; color: #F2B705 !important; text-shadow: 1px 1px 2px rgba(0,0,0,0.05); }
 
-/* 사이드바 여백 및 평면화 */
 [data-testid="stSidebar"] { min-width: 280px !important; }
 [data-testid="stSidebar"] [data-testid="stSidebarUserContent"], [data-testid="stSidebar"] .block-container { padding-top: 0rem !important; }
 [data-testid="stSidebar"] .stExpander { border: none !important; background: transparent !important; box-shadow: none !important; }
 [data-testid="stSidebar"] .stExpander summary { padding-left: 0px !important; color: #B28704 !important; font-weight: 800 !important; }
 
-/* ── 2. 채팅 레이아웃 및 하단 가림막 ── */
 .main .block-container { max-width: 720px !important; padding-top: 5rem !important; padding-bottom: 8rem !important; }
 
-/* ✅ 하단 배경 영역: 입력창을 아래로 내리기 위해 여백을 완전히 없앰 */
+/* ✅ 채팅창 하단 여백 완전 제거 (바닥 밀착) */
 div[data-testid="stBottom"] {
     background-color: #F2B705 !important; 
     padding-top: 15px !important;
@@ -36,7 +29,7 @@ div[data-testid="stBottom"] {
 }
 div[data-testid="stBottom"] > div { background-color: transparent !important; }
 
-/* ✅ 채팅 입력창: 하단 마진을 2px로 극단적으로 줄여서 바닥에 바짝 붙임 */
+/* ✅ 하단 마진을 2px로 줄여 여백 최소화 */
 div[data-testid="stChatInput"] {
     max-width: 680px !important; 
     width: calc(100% - 2rem) !important; 
@@ -47,7 +40,6 @@ div[data-testid="stChatInput"] {
     box-shadow: 0 8px 30px rgba(0,0,0,0.12) !important; 
 }
 
-/* ── 3. 카카오톡 스타일 말풍선 ── */
 .bubble-container { display: flex; align-items: flex-start; margin-bottom: 18px; width: 100%; gap: 12px; }
 .user-msg { justify-content: flex-end !important; } 
 .ai-msg { justify-content: flex-start !important; } 
@@ -55,7 +47,6 @@ div[data-testid="stChatInput"] {
 .ai-bubble { background-color: #FFFFFF !important; color: #222222 !important; border-top-left-radius: 4px !important; }
 .user-bubble { background-color: #FEE500 !important; color: #3B1E1E !important; border-top-right-radius: 4px !important; }
 
-/* ── 4. 사이드바 버튼 스타일링 (왼쪽 정렬 보강) ── */
 [data-testid="stSidebar"] button[kind="primary"] { background-color: #F2B705 !important; color: white !important; border: none !important; font-weight: bold; }
 [data-testid="stSidebar"] button[kind="secondary"] {
     background-color: transparent !important; border: none !important; box-shadow: none !important;
@@ -63,3 +54,4 @@ div[data-testid="stChatInput"] {
     padding-left: 5px !important; display: flex !important; width: 100% !important;
 }
 [data-testid="stSidebar"] button[kind="secondary"] * { text-align: left !important; justify-content: flex-start !important; font-size: 0.95rem !important; }
+[data-testid="stSidebar"] button[kind="secondary"]:hover { background-color: rgba(242, 183, 5, 0.08) !important; }

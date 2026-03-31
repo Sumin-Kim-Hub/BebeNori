@@ -71,7 +71,9 @@ def _ordered_source_docs(df: pd.DataFrame, pids: list) -> list:
 # 5. UI 출력
 ui_components.render_sidebar(df)
 for chat in current_session["chat_history"]:
-    st.markdown(ui_components.get_message_html(chat["role"], chat["content"], source_docs=chat.get("source_docs", [])), unsafe_allow_html=True)
+    # 🚀 [수정 포인트] 이전 대화 기록 렌더링 시에도 intent 정보를 넘겨줌
+    past_intent = chat.get("turn_meta", {}).get("intent")
+    st.markdown(ui_components.get_message_html(chat["role"], chat["content"], source_docs=chat.get("source_docs", []), intent=past_intent), unsafe_allow_html=True)
 
 # 6. 채팅 입력 및 RAG 로직 (v3.31 통합 로직)
 if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
@@ -118,7 +120,16 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 saved_source_docs = _ordered_source_docs(df, source_pids)
                 active_place_id, active_place_rank = infer_answer_place(saved_source_docs, response_text)
 
-        st.markdown(ui_components.get_message_html("assistant", response_text, saved_source_docs), unsafe_allow_html=True)
+                # LLM이 답변에서 언급한 장소를 카드(첫 번째 doc)로 띄우기 위한 재정렬 로직
+                if active_place_id:
+                    for i, doc in enumerate(saved_source_docs):
+                        if doc.get("place_id") == active_place_id:
+                            active_doc = saved_source_docs.pop(i)
+                            saved_source_docs.insert(0, active_doc)
+                            break
+
+        # [수정] 생성된 답변을 그릴 때 현재 intent를 함께 넘겨줌
+        st.markdown(ui_components.get_message_html("assistant", response_text, saved_source_docs, intent=intent), unsafe_allow_html=True)
         
         # 메타데이터 저장 및 세션 업데이트
         current_session["chat_history"].append({

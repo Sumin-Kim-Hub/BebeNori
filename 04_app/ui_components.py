@@ -89,7 +89,8 @@ def render_sidebar(df: pd.DataFrame):
                 ), height=230) 
         st.markdown("""<div style="padding: 10px 5px;"><a href="https://yeyak.seoul.go.kr/" target="_blank" style="color: #6B9DD4; font-weight: 800; font-size: 0.95rem; text-decoration: none;">공식 사이트 예약하러 가기</a></div>""", unsafe_allow_html=True)
 
-def get_message_html(role, content, source_docs=None):
+# [수정] 함수 인자에 intent 파라미터 추가
+def get_message_html(role, content, source_docs=None, intent=None):
     content = parse_markdown(content).replace('\n', '<br>')
     icon, label, color = ("🐰", "베베노리 이모", "#F2B705") if role == "assistant" else ("👪", "사용자", "#6B9DD4")
     cls = "ai" if role == "assistant" else "user"
@@ -109,36 +110,54 @@ def get_message_html(role, content, source_docs=None):
                     break
             if not img_url: img_url = DEFAULT_IMG
             
-            raw_feats = doc.get("features", [])
-            if isinstance(raw_feats, str): 
-                raw_feats = raw_feats.replace("[", "").replace("]", "").replace("'", "").replace('"', "").split(",")
-            
-            tags_html = "".join([
-                f"<span style='color: #6B9DD4; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; background-color: #F4F8FD; margin-right: 5px; margin-bottom: 5px; display: inline-block; white-space: nowrap; border: 1px solid #6B9DD4;'>{TAG_MAP.get(f.strip().lower(), '#기타정보')}</span>" 
-                for f in raw_feats[:6] if f.strip() and f.strip().lower() in TAG_MAP
-            ])
-
-            cards_html += f"""
-            <div style="border: 2px solid #FDF4D6; border-radius: 16px; overflow: hidden; background-color: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.06); width: 100%;">
-                <div style="position: relative; height: 160px; background-color: #EFEFEF;">
-                    <img src="{img_url}" onerror="this.onerror=null; this.src='{DEFAULT_IMG}';" style="width: 100%; height: 100%; object-fit: cover;">
-                    <div style="position: absolute; top: 12px; left: 12px;">
-                        <span style="background-color: #F2B705; color: #333; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 800; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">1순위 추천</span>
-                    </div>
-                </div>
-                <div style="padding: 16px;">
-                    <div style="font-size: 1.1rem; font-weight: 800; color: #333; margin-bottom: 6px; word-break: keep-all;">{name}</div>
-                    <div style="font-size: 0.85rem; color: #777; margin-bottom: 12px; word-break: keep-all;">{address}</div>
-                    <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 5px;">{tags_html}</div>
+            # [수정] intent가 doc_lookup일 경우 미니 카드로 렌더링
+            if intent == "doc_lookup":
+                cards_html += f"""
+                <div style="border: 1px solid #EFEFEF; border-radius: 12px; padding: 12px; background-color: #FAFAFA; box-shadow: 0 2px 8px rgba(0,0,0,0.04); width: 100%;">
+                    <div style="font-size: 0.95rem; font-weight: 800; color: #333; margin-bottom: 8px; word-break: keep-all;">📍 {name}</div>
                     <div style="display: flex; gap: 8px;">
-                        <a href="{link}" target="_blank" style="flex: 1; background-color: #F2B705; color: #333; text-align: center; padding: 10px 0; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 0.95rem;">예약하기</a>
-                        <a href="https://map.naver.com/v5/search/{urllib.parse.quote(name)}" target="_blank" style="flex: 1; background-color: #6B9DD4; color: #000000; text-align: center; padding: 10px 0; border-radius: 8px; text-decoration: none; font-weight: 800; font-size: 0.95rem;">지도 보기</a>
+                        <a href="{link}" target="_blank" style="flex: 1; background-color: #F2B705; color: #333; text-align: center; padding: 8px 0; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">예약하기</a>
+                        <a href="https://map.naver.com/v5/search/{urllib.parse.quote(name)}" target="_blank" style="flex: 1; background-color: #6B9DD4; color: #000000; text-align: center; padding: 8px 0; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 0.85rem;">지도 보기</a>
                     </div>
                 </div>
-            </div>
-            """
-        if len(source_docs) > 1: 
-            cards_html += """<div style="margin-top: 12px; display: inline-block; background-color: #FFF4D6; border: 1px dashed #F2B705; color: #B28704; padding: 10px 16px; border-radius: 20px; font-size: 0.85rem; font-weight: 800; word-break: keep-all;">추천 질문: "2순위 후보도 보여줘" 라고 입력해보세요!</div>"""
+                """
+            # [수정] 일반 추천일 경우 기존 카드의 여백/폰트/이미지 크기를 약간 축소하여 가독성 개선
+            else:
+                raw_feats = doc.get("features", [])
+                if isinstance(raw_feats, str): 
+                    raw_feats = raw_feats.replace("[", "").replace("]", "").replace("'", "").replace('"', "").split(",")
+                
+                tags_html = "".join([
+                    f"<span style='color: #6B9DD4; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; background-color: #F4F8FD; margin-right: 4px; margin-bottom: 4px; display: inline-block; white-space: nowrap; border: 1px solid #6B9DD4;'>{TAG_MAP.get(f.strip().lower(), '#기타정보')}</span>" 
+                    for f in raw_feats[:6] if f.strip() and f.strip().lower() in TAG_MAP
+                ])
+
+                cards_html += f"""
+                <div style="border: 2px solid #FDF4D6; border-radius: 14px; overflow: hidden; background-color: #FFFFFF; box-shadow: 0 4px 10px rgba(0,0,0,0.05); width: 100%;">
+                    <div style="position: relative; height: 140px; background-color: #EFEFEF;">
+                        <img src="{img_url}" onerror="this.onerror=null; this.src='{DEFAULT_IMG}';" style="width: 100%; height: 100%; object-fit: cover;">
+                        <div style="position: absolute; top: 10px; left: 10px;">
+                            <span style="background-color: #F2B705; color: #333; padding: 4px 8px; border-radius: 10px; font-size: 0.7rem; font-weight: 800; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">1순위 추천</span>
+                        </div>
+                    </div>
+                    <div style="padding: 14px;">
+                        <div style="font-size: 1.05rem; font-weight: 800; color: #333; margin-bottom: 4px; word-break: keep-all;">{name}</div>
+                        <div style="font-size: 0.8rem; color: #777; margin-bottom: 10px; word-break: keep-all;">{address}</div>
+                        <div style="margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 4px;">{tags_html}</div>
+                        <div style="display: flex; gap: 6px;">
+                            <a href="{link}" target="_blank" style="flex: 1; background-color: #F2B705; color: #333; text-align: center; padding: 8px 0; border-radius: 6px; text-decoration: none; font-weight: 800; font-size: 0.9rem;">예약하기</a>
+                            <a href="https://map.naver.com/v5/search/{urllib.parse.quote(name)}" target="_blank" style="flex: 1; background-color: #6B9DD4; color: #000000; text-align: center; padding: 8px 0; border-radius: 6px; text-decoration: none; font-weight: 800; font-size: 0.9rem;">지도 보기</a>
+                        </div>
+                    </div>
+                </div>
+                """
+        
+        # [수정] doc_lookup(정보 확인)일 때는 추천 질문 숨김 (화면 간소화)
+        if len(source_docs) > 1 and intent != "doc_lookup":
+            next_place_name = source_docs[1].get("place_name", "다른 키즈카페")
+            clean_next_name = next_place_name.replace("서울형 키즈카페", "").strip()
+            cards_html += f"""<div style="margin-top: 10px; display: inline-block; background-color: #FFF4D6; border: 1px dashed #F2B705; color: #B28704; padding: 8px 14px; border-radius: 16px; font-size: 0.8rem; font-weight: 800; word-break: keep-all;">💡 추천 질문: "{clean_next_name}도 알려줘" 또는 "여기 주차 어떻게 해?" 라고 입력해보세요!</div>"""
+        
         cards_html += "</div>"
         
     profile_html = f"""<div style="display: flex; flex-direction: column; align-items: center; min-width: 55px;"><div style="width: 42px; height: 42px; border-radius: 50%; background: white; border: 2px solid {color}; display: flex; justify-content: center; align-items: center;"><span style="font-size: 22px;">{icon}</span></div><div style="font-size: 0.6rem; font-weight: bold; color: {color if role=='user' else 'white'}; margin-top: 4px; text-align: center;">{label}</div></div>"""

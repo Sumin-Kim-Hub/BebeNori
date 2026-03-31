@@ -4,7 +4,7 @@ import pydeck as pdk
 import re
 import urllib.parse
 
-# ✅ 팀장님 피드백 반영: 육아 편의성 및 편의시설 태그 대폭 확장
+# 육아 편의성 및 편의시설 태그 대폭 확장
 TAG_MAP = {
     # [기본 편의시설]
     "parking_available": "#주차가능",
@@ -14,7 +14,7 @@ TAG_MAP = {
     "cafe": "#카페시설",
     "wi_fi": "#무선인터넷",
     
-    # [육아 필수 시설 - 팀장님 강조 사항]
+    # [육아 필수 시설]
     "nursing_room": "#수유실완비",
     "diaper_table": "#기저귀교환대",
     "microwave": "#전자레인지(이유식)",
@@ -113,7 +113,6 @@ def get_message_html(role, content, source_docs=None):
             if isinstance(raw_feats, str): 
                 raw_feats = raw_feats.replace("[", "").replace("]", "").replace("'", "").replace('"', "").split(",")
             
-            # 영문 태그 방어 및 노출 개수 6개로 증가 (육아 편의시설 강조)
             tags_html = "".join([
                 f"<span style='color: #6B9DD4; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; background-color: #F4F8FD; margin-right: 5px; margin-bottom: 5px; display: inline-block; white-space: nowrap; border: 1px solid #6B9DD4;'>{TAG_MAP.get(f.strip().lower(), '#기타정보')}</span>" 
                 for f in raw_feats[:6] if f.strip() and f.strip().lower() in TAG_MAP
@@ -122,7 +121,7 @@ def get_message_html(role, content, source_docs=None):
             cards_html += f"""
             <div style="border: 2px solid #FDF4D6; border-radius: 16px; overflow: hidden; background-color: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.06); width: 100%;">
                 <div style="position: relative; height: 160px; background-color: #EFEFEF;">
-                    <img src="{img_url}" style="width: 100%; height: 100%; object-fit: cover;">
+                    <img src="{img_url}" onerror="this.onerror=null; this.src='{DEFAULT_IMG}';" style="width: 100%; height: 100%; object-fit: cover;">
                     <div style="position: absolute; top: 12px; left: 12px;">
                         <span style="background-color: #F2B705; color: #333; padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 800; box-shadow: 0 2px 4px rgba(0,0,0,0.15);">1순위 추천</span>
                     </div>
@@ -145,6 +144,5 @@ def get_message_html(role, content, source_docs=None):
     profile_html = f"""<div style="display: flex; flex-direction: column; align-items: center; min-width: 55px;"><div style="width: 42px; height: 42px; border-radius: 50%; background: white; border: 2px solid {color}; display: flex; justify-content: center; align-items: center;"><span style="font-size: 22px;">{icon}</span></div><div style="font-size: 0.6rem; font-weight: bold; color: {color if role=='user' else 'white'}; margin-top: 4px; text-align: center;">{label}</div></div>"""
     bubble_html = f'<div class="bubble {cls}-bubble">{content}{cards_html}</div>'
     
-    # 사용자 말풍선은 프로필이 오른쪽에 오도록 배치
     display_content = bubble_html + profile_html if role == "user" else profile_html + bubble_html
     return f'<div class="bubble-container {cls}-msg">{display_content}</div>'

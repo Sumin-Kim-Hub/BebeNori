@@ -27,8 +27,7 @@ def render_sidebar(df: pd.DataFrame):
         st.markdown("""<div style="padding: 0px 0 20px 0; text-align: center;"><span class="sidebar-logo">BEBENORI</span><br><span style="color:#6B9DD4; font-size:0.85rem; font-weight: 800;">서울형 키즈카페 안심 가이드</span></div>""", unsafe_allow_html=True)
         if st.button("새로운 대화 시작", use_container_width=True, type="primary"):
             new_id = len(st.session_state.sessions)
-            # 🚀 [수정 포인트] 새 대화 시작 시 이름 변경
-            st.session_state.sessions.append({"id": new_id, "title": f"새 대화 {new_id + 1}", "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모 삼촌이에요\n궁금한 키즈카페가 있나요?", "source_docs": []}]})
+            st.session_state.sessions.append({"id": new_id, "title": f"새 대화 {new_id + 1}", "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모 삼촌이에요 🐰\n궁금한 키즈카페가 있나요?", "source_docs": []}]})
             st.session_state.current_session_id = new_id
             st.rerun()
         st.divider()
@@ -67,13 +66,12 @@ def render_sidebar(df: pd.DataFrame):
 
 def get_message_html(role, content, source_docs=None, intent=None):
     content = parse_markdown(content).replace('\n', '<br>')
-    
-    # 🚀 [수정 포인트] 사용자 이름 변경, AI 이름 <br> 처리
     icon, label, color = ("🐰", "베베노리<br>이모 삼촌", "#F2B705") if role == "assistant" else ("👪", "놀이메이트", "#6B9DD4")
     cls = "ai" if role == "assistant" else "user"
     cards_html = ""
     
-    if role == "assistant" and source_docs:
+    # 🚀 [수정 포인트] 정보 꼬리질문(place_detail)일 경우 아예 카드를 그리지 않음
+    if role == "assistant" and source_docs and intent != "place_detail":
         cards_html = "<div style='display: flex; flex-direction: column; gap: 15px; margin-top: 15px;'>"
         for doc in source_docs[:1]:
             name = doc.get("place_name", "키즈카페")
@@ -88,6 +86,7 @@ def get_message_html(role, content, source_docs=None, intent=None):
             if not img_url: img_url = DEFAULT_IMG
             
             if intent == "doc_lookup":
+                # 주차, 예약 등 명확한 기능성 미니 카드
                 cards_html += f"""
                 <div style="border: 1px solid #EFEFEF; border-radius: 12px; padding: 12px; background-color: #FAFAFA; box-shadow: 0 2px 8px rgba(0,0,0,0.04); width: 100%;">
                     <div style="font-size: 0.95rem; font-weight: 800; color: #333; margin-bottom: 8px; word-break: keep-all;">📍 {name}</div>
@@ -127,7 +126,8 @@ def get_message_html(role, content, source_docs=None, intent=None):
                 </div>
                 """
         
-        if len(source_docs) > 1 and intent != "doc_lookup":
+        # 꼬리질문일 때는 "다음 장소 추천 문구"도 숨겨서 화면을 가장 깔끔하게 유지합니다.
+        if len(source_docs) > 1 and intent not in ("doc_lookup", "place_detail"):
             next_place_name = source_docs[1].get("place_name", "다른 키즈카페")
             clean_next_name = next_place_name.replace("서울형 키즈카페", "").strip()
             cards_html += f"""<div style="margin-top: 10px; display: inline-block; background-color: #FFF4D6; border: 1px dashed #F2B705; color: #B28704; padding: 8px 14px; border-radius: 16px; font-size: 0.8rem; font-weight: 800; word-break: keep-all;">💡 추천 질문: "{clean_next_name}도 알려줘" 또는 "여기 주차 어떻게 해?" 라고 입력해보세요!</div>"""

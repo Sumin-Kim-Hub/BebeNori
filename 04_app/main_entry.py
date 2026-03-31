@@ -47,7 +47,6 @@ if "sessions" not in st.session_state:
         "id": 0, "title": "첫 번째 대화",
         "chat_history": [{
             "role": "assistant", 
-            # 🚀 [수정 포인트] 인사말 변경
             "content": "반가워요! 베베노리 이모 삼촌이에요 🐰\n우리 아이와 함께 가기 좋은 서울형 키즈카페를 찾아 드릴게요!",
             "source_docs": [], "turn_meta": {}
         }]
@@ -79,6 +78,12 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
         with st.spinner("최적의 장소를 찾는 중... ✨"):
             resolution = resolve_followup(current_session["chat_history"], prompt)
             intent = resolution.get("intent")
+            
+            # 🚀 [앱단 오버라이드 1] 모델 파일을 고치지 않고, 앱에서 짧은 확인 질문을 '꼬리질문(place_detail)'으로 강제 분류
+            short_detail_keywords = ["정수기", "전자레인지", "와이파이", "화장실", "기저귀", "식당", "매점", "수유실", "있어", "돼", "되나", "가능"]
+            if intent == "fresh_search" and len(prompt) <= 25 and any(k in prompt for k in short_detail_keywords):
+                intent = "place_detail"
+
             age_sel = ""
             
             response_text, source_pids = "", []
@@ -91,13 +96,30 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 response_text = format_doc_lookup_answer(resolution.get("target_doc"), resolution.get("lookup_field")) or "관련 정보가 부족해요."
                 saved_source_docs = resolution.get("source_docs", [])
                 if resolution.get("target_doc"): active_place_id = resolution["target_doc"].get("place_id")
+            
             elif intent == "place_detail":
                 target_doc = resolution.get("target_doc")
                 pids = [target_doc.get("place_id")] if target_doc else []
                 ctx = build_context(df, dev_df, pids, age_sel=age_sel, query=prompt)
-                response_text = gen_followup_answer(llm_chain, prompt, ctx, resolution.get("last_answer", ""))
+                
+                # 🚀 [앱단 오버라이드 2] 백엔드를 거치지 않고 직접 LLM에 '짧게 대답해!'라고 명령 전송
+                custom_msg = (
+                    f"참고 데이터:\n{ctx}\n\n"
+                    f"질문: '{prompt}'\n\n"
+                    "⚠️ [특별 지시사항]\n"
+                    "이 질문은 방금 추천한 장소에 대한 '간단한 추가 정보 확인'이야.\n"
+                    "인사말이나 추천 장소 이름을 반복하는 등 거창한 양식을 절대 쓰지 마!\n"
+                    "묻는 말에만 1~2문장 내외로 아주 짧고 다정하게 대답해줘.\n"
+                    "데이터에 해당 내용이 없다면 '데이터 상으로는 별도로 확인되지 않아요. 가시기 전 센터에 문의해 보세요!'라고 솔직하게 말해줘."
+                )
+                try:
+                    response_text = llm_chain.invoke({"user_message": custom_msg})
+                except Exception:
+                    response_text = "정보를 확인하는 데 문제가 발생했어요."
+                
                 saved_source_docs = resolution.get("source_docs", [])
                 if target_doc: active_place_id = target_doc.get("place_id")
+            
             else:
                 search_query = resolution.get("standalone_query", prompt)
                 source_pids = rag_retrieve(vectorstore, search_query, df)

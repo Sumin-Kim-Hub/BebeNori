@@ -127,7 +127,7 @@ def get_message_html(role, content, source_docs=None):
 
             # ✅ onerror가 지워지는 문제 해결을 위해 단순화
             cards_html += f"""
-            <div style="border: 2px solid #FDF4D6; border-radius: 166px; overflow: hidden; background-color: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.06); width: 100%;">
+            <div style="border: 2px solid #FDF4D6; border-radius: 16px; overflow: hidden; background-color: #FFFFFF; box-shadow: 0 4px 12px rgba(0,0,0,0.06); width: 100%;">
                 <div style="position: relative; height: 160px; background-color: #EFEFEF;">
                     <img src="{img_url}" style="width: 100%; height: 100%; object-fit: cover;">
                     <div style="position: absolute; top: 12px; left: 12px;">

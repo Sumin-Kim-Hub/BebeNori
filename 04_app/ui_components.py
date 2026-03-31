@@ -4,40 +4,15 @@ import pydeck as pdk
 import re
 import urllib.parse
 
-# 육아 편의성 및 편의시설 태그 대폭 확장
 TAG_MAP = {
-    # [기본 편의시설]
-    "parking_available": "#주차가능",
-    "parking_paid": "#유료주차",
-    "reservation_available": "#예약가능",
-    "stroller_parking": "#유모차보관소",
-    "cafe": "#카페시설",
-    "wi_fi": "#무선인터넷",
-    
-    # [육아 필수 시설]
-    "nursing_room": "#수유실완비",
-    "diaper_table": "#기저귀교환대",
-    "microwave": "#전자레인지(이유식)",
-    "high_chair": "#아기의자구비",
-    "baby_food_allowed": "#이유식반입가능",
-    "nursing_pillow": "#수유쿠션비치",
-    
-    # [대상 및 돌봄]
-    "toddler_friendly": "#영유아특화",
-    "preschool_friendly": "#유아환영",
-    "care_service_available": "#돌봄서비스",
-    "careserviceavailable": "#돌봄서비스",
-    "guardian_required": "#보호자동반",
-    "guardianrequired": "#보호자동반",
-    
-    # [안전 및 위생]
-    "air_purifier": "#공기청정기",
-    "cctv": "#CCTV설치",
-    "first_aid_kit": "#구급함비치",
-    
-    # [놀이 특징]
-    "play_zone": "#다양한놀이존",
-    "discount_available": "#할인혜택"
+    "parking_available": "#주차가능", "parking_paid": "#유료주차", "reservation_available": "#예약가능",
+    "stroller_parking": "#유모차보관소", "cafe": "#카페시설", "wi_fi": "#무선인터넷",
+    "nursing_room": "#수유실완비", "diaper_table": "#기저귀교환대", "microwave": "#전자레인지(이유식)",
+    "high_chair": "#아기의자구비", "baby_food_allowed": "#이유식반입가능", "nursing_pillow": "#수유쿠션비치",
+    "toddler_friendly": "#영유아특화", "preschool_friendly": "#유아환영", "care_service_available": "#돌봄서비스",
+    "careserviceavailable": "#돌봄서비스", "guardian_required": "#보호자동반", "guardianrequired": "#보호자동반",
+    "air_purifier": "#공기청정기", "cctv": "#CCTV설치", "first_aid_kit": "#구급함비치",
+    "play_zone": "#다양한놀이존", "discount_available": "#할인혜택"
 }
 
 DEFAULT_IMG = "https://images.unsplash.com/photo-1566454825481-4e48f80aa4d7?q=80&w=500&auto=format&fit=crop"
@@ -52,7 +27,8 @@ def render_sidebar(df: pd.DataFrame):
         st.markdown("""<div style="padding: 0px 0 20px 0; text-align: center;"><span class="sidebar-logo">BEBENORI</span><br><span style="color:#6B9DD4; font-size:0.85rem; font-weight: 800;">서울형 키즈카페 안심 가이드</span></div>""", unsafe_allow_html=True)
         if st.button("새로운 대화 시작", use_container_width=True, type="primary"):
             new_id = len(st.session_state.sessions)
-            st.session_state.sessions.append({"id": new_id, "title": f"새 대화 {new_id + 1}", "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모예요\n궁금한 키즈카페가 있나요?", "source_docs": []}]})
+            # 🚀 [수정 포인트] 새 대화 시작 시 이름 변경
+            st.session_state.sessions.append({"id": new_id, "title": f"새 대화 {new_id + 1}", "chat_history": [{"role": "assistant", "content": "반가워요! 베베노리 이모 삼촌이에요\n궁금한 키즈카페가 있나요?", "source_docs": []}]})
             st.session_state.current_session_id = new_id
             st.rerun()
         st.divider()
@@ -89,10 +65,11 @@ def render_sidebar(df: pd.DataFrame):
                 ), height=230) 
         st.markdown("""<div style="padding: 10px 5px;"><a href="https://yeyak.seoul.go.kr/" target="_blank" style="color: #6B9DD4; font-weight: 800; font-size: 0.95rem; text-decoration: none;">공식 사이트 예약하러 가기</a></div>""", unsafe_allow_html=True)
 
-# [수정] 함수 인자에 intent 파라미터 추가
 def get_message_html(role, content, source_docs=None, intent=None):
     content = parse_markdown(content).replace('\n', '<br>')
-    icon, label, color = ("🐰", "베베노리 이모", "#F2B705") if role == "assistant" else ("👪", "사용자", "#6B9DD4")
+    
+    # 🚀 [수정 포인트] 사용자 이름 변경, AI 이름 <br> 처리
+    icon, label, color = ("🐰", "베베노리<br>이모 삼촌", "#F2B705") if role == "assistant" else ("👪", "놀이메이트", "#6B9DD4")
     cls = "ai" if role == "assistant" else "user"
     cards_html = ""
     
@@ -110,7 +87,6 @@ def get_message_html(role, content, source_docs=None, intent=None):
                     break
             if not img_url: img_url = DEFAULT_IMG
             
-            # [수정] intent가 doc_lookup일 경우 미니 카드로 렌더링
             if intent == "doc_lookup":
                 cards_html += f"""
                 <div style="border: 1px solid #EFEFEF; border-radius: 12px; padding: 12px; background-color: #FAFAFA; box-shadow: 0 2px 8px rgba(0,0,0,0.04); width: 100%;">
@@ -121,7 +97,6 @@ def get_message_html(role, content, source_docs=None, intent=None):
                     </div>
                 </div>
                 """
-            # [수정] 일반 추천일 경우 기존 카드의 여백/폰트/이미지 크기를 약간 축소하여 가독성 개선
             else:
                 raw_feats = doc.get("features", [])
                 if isinstance(raw_feats, str): 
@@ -152,7 +127,6 @@ def get_message_html(role, content, source_docs=None, intent=None):
                 </div>
                 """
         
-        # [수정] doc_lookup(정보 확인)일 때는 추천 질문 숨김 (화면 간소화)
         if len(source_docs) > 1 and intent != "doc_lookup":
             next_place_name = source_docs[1].get("place_name", "다른 키즈카페")
             clean_next_name = next_place_name.replace("서울형 키즈카페", "").strip()

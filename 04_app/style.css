@@ -13,21 +13,19 @@ header[data-testid="stHeader"]::before {
 }
 .sidebar-logo { 
     font-family: 'Fredoka One', cursive !important; 
-    font-size: 2.2rem !important; /* 모바일에 맞게 크기 살짝 축소 */
+    font-size: 2.2rem !important; 
     color: #F2B705 !important; 
     text-shadow: 1px 1px 2px rgba(0,0,0,0.05); 
-    white-space: nowrap !important; /* ★ 강제 줄바꿈 방지 */
-    letter-spacing: -1px !important; /* 자간을 좁혀서 공간 확보 */
+    white-space: nowrap !important; 
+    letter-spacing: -1px !important; 
 }
-/* [수정 1] 사이드바 너비 강제 고정(min-width: 280px) 코드 삭제 -> 모바일 닫힘 에러 완벽 해결 */
+
 [data-testid="stSidebar"] [data-testid="stSidebarUserContent"], [data-testid="stSidebar"] .block-container { padding-top: 0rem !important; }
 [data-testid="stSidebar"] .stExpander { border: none !important; background: transparent !important; box-shadow: none !important; }
 [data-testid="stSidebar"] .stExpander summary { padding-left: 0px !important; color: #B28704 !important; font-weight: 800 !important; }
 
-/* [수정 2] 메인 컨테이너 하단 패딩을 120px로 넉넉히 주어 마지막 말풍선이 하단바에 가리지 않도록 보호 */
 .main .block-container { max-width: 720px !important; padding-top: 5rem !important; padding-bottom: 120px !important; }
 
-/* [수정 3] 하단 입력창 배경을 앱 배경색(F2B705)과 동일하게 채워서 스크롤되는 대화내역을 카톡처럼 가려줌 */
 div[data-testid="stBottom"] {
     background-color: #F2B705 !important; 
     padding-top: 15px !important;
@@ -37,17 +35,18 @@ div[data-testid="stBottom"] {
 }
 div[data-testid="stBottom"] > div { background-color: transparent !important; }
 
+/* 🚀 [수정 포인트] 모서리(50px) 둥글게 처리 및 내용물 삐져나옴 방지(overflow) */
 div[data-testid="stChatInput"] {
     max-width: 680px !important; 
     width: calc(100% - 2rem) !important; 
     margin: 0 auto 0px auto !important; 
     background-color: #FFFFFF !important; 
-    border-radius: 35px !important; 
+    border-radius: 50px !important; 
     border: 1px solid #DDDDDD !important; 
     box-shadow: 0 8px 30px rgba(0,0,0,0.12) !important; 
+    overflow: hidden !important; 
 }
 
-/* 사용자 말풍선 우측 정렬 완벽 적용 */
 .bubble-container { display: flex; align-items: flex-start; margin-bottom: 18px; width: 100%; gap: 12px; }
 .user-msg { justify-content: flex-end !important; } 
 .ai-msg { justify-content: flex-start !important; } 

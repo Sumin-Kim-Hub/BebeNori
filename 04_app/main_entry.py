@@ -64,6 +64,19 @@ def _ordered_source_docs(df: pd.DataFrame, pids: list) -> list:
     return [by_pid[pid] for pid in pids if pid in by_pid]
 
 
+def _merge_place_ids(*groups: list) -> list[str]:
+    merged = []
+    seen = set()
+    for group in groups:
+        for value in group or []:
+            pid = str(value or "").strip().upper()
+            if not pid or pid in seen:
+                continue
+            seen.add(pid)
+            merged.append(pid)
+    return merged
+
+
 def _get_recent_child_age_months(chat_history: list[dict]) -> Optional[int]:
     for chat in reversed(chat_history):
         if chat.get("role") == "assistant":
@@ -122,6 +135,8 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             active_place_id = resolution.get("active_place_id")
             active_place_rank = resolution.get("target_doc_rank", 0)
             search_slots = dict(resolution.get("search_slots", {}) or {})
+            shown_place_ids = list(resolution.get("shown_place_ids", []) or [])
+            excluded_place_ids = list(resolution.get("excluded_place_ids", []) or [])
             if child_age_months is not None:
                 search_slots["child_age_months"] = child_age_months
             
@@ -129,6 +144,7 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 response_text = format_doc_lookup_answer(resolution.get("target_doc"), resolution.get("lookup_field")) or "관련 정보가 부족해요."
                 saved_source_docs = list(resolution.get("source_docs", []))
                 if resolution.get("target_doc"): active_place_id = resolution["target_doc"].get("place_id")
+                shown_place_ids = _merge_place_ids(shown_place_ids, [active_place_id] if active_place_id else [])
             
             elif intent == "place_detail":
                 target_doc = resolution.get("target_doc")
@@ -173,6 +189,73 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 
                 saved_source_docs = list(resolution.get("source_docs", []))
                 if target_doc: active_place_id = target_doc.get("place_id")
+                shown_place_ids = _merge_place_ids(shown_place_ids, [active_place_id] if active_place_id else [])
+
+            elif intent == "switch_recommendation":
+                search_query = resolution.get("standalone_query", prompt)
+                previous_active_pid = str(resolution.get("active_place_id") or "").strip().upper()
+                preferred_pid = ""
+                if resolution.get("target_doc") and resolution["target_doc"].get("place_id"):
+                    preferred_pid = str(resolution["target_doc"].get("place_id") or "").strip().upper()
+
+                consumed_pids = _merge_place_ids(shown_place_ids, excluded_place_ids, [previous_active_pid])
+                prior_candidates = [
+                    str(pid or "").strip().upper()
+                    for pid in resolution.get("retrieved_pids", []) or []
+                    if str(pid or "").strip()
+                ]
+                available_pids = [pid for pid in prior_candidates if pid not in set(consumed_pids)]
+                if preferred_pid and preferred_pid in available_pids:
+                    available_pids = [preferred_pid] + [pid for pid in available_pids if pid != preferred_pid]
+
+                if available_pids:
+                    retrieval = rag_retrieve(
+                        vectorstore,
+                        search_query,
+                        df,
+                        n=max(len(available_pids), 3),
+                        return_details=True,
+                        candidate_pids=available_pids,
+                    )
+                else:
+                    retrieval = rag_retrieve(
+                        vectorstore,
+                        search_query,
+                        df,
+                        n=4,
+                        return_details=True,
+                        exclude_pids=consumed_pids,
+                    )
+
+                source_pids = retrieval.get("pids", [])
+                if not source_pids:
+                    response_text = "지금 조건에서 바로 이어서 추천할 다른 곳은 더 안 보이네요. 조건을 조금 바꿔서 다시 찾아볼까요?"
+                    saved_source_docs = list(resolution.get("source_docs", []))
+                    shown_place_ids = _merge_place_ids(shown_place_ids, [previous_active_pid] if previous_active_pid else [])
+                    excluded_place_ids = _merge_place_ids(excluded_place_ids, [previous_active_pid] if previous_active_pid else [])
+                else:
+                    ctx = build_context(
+                        df,
+                        dev_df,
+                        source_pids,
+                        age_months=child_age_months,
+                        query=search_query,
+                        evidence_by_pid=retrieval.get("evidence_by_pid", {}),
+                    )
+                    response_text = gen_followup_answer(llm_chain, prompt, ctx, resolution.get("last_answer", ""))
+                    saved_source_docs = _ordered_source_docs(df, source_pids)
+                    active_place_id, active_place_rank = infer_answer_place(saved_source_docs, response_text)
+                    if not active_place_id and source_pids:
+                        active_place_id, active_place_rank = source_pids[0], 0
+                    shown_place_ids = _merge_place_ids(
+                        shown_place_ids,
+                        [previous_active_pid] if previous_active_pid else [],
+                        [active_place_id] if active_place_id else [],
+                    )
+                    excluded_place_ids = _merge_place_ids(
+                        excluded_place_ids,
+                        [previous_active_pid] if previous_active_pid else [],
+                    )
             
             else:
                 search_query = resolution.get("standalone_query", prompt)
@@ -194,6 +277,8 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 
                 saved_source_docs = _ordered_source_docs(df, source_pids)
                 active_place_id, active_place_rank = infer_answer_place(saved_source_docs, response_text)
+                shown_place_ids = _merge_place_ids([active_place_id] if active_place_id else [])
+                excluded_place_ids = []
 
             # 엉뚱한 카드 방지 강제 정렬 로직
             if active_place_id and saved_source_docs:
@@ -212,6 +297,8 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 "active_place_id": active_place_id, "active_place_rank": active_place_rank,
                 "retrieved_pids": source_pids if source_pids else resolution.get("retrieved_pids", []),
                 "child_age_months": child_age_months,
+                "shown_place_ids": shown_place_ids,
+                "excluded_place_ids": excluded_place_ids,
                 "search_slots": search_slots,
             },
             "source_docs": saved_source_docs

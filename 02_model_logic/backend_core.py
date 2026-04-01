@@ -1116,6 +1116,7 @@ def rag_retrieve(
     n:           int = 4,
     return_details: bool = False,
     candidate_pids: Optional[list[str]] = None,
+    exclude_pids: Optional[list[str]] = None,
 ) -> Union[list, dict]:
     """
     벡터 유사도 검색으로 관련 장소 ID 리스트를 반환합니다.
@@ -1142,6 +1143,12 @@ def rag_retrieve(
         if not candidate_pid_set:
             return {"pids": [], "evidence_by_pid": {}} if return_details else []
 
+    exclude_pid_set = {
+        _safe_text(pid).upper()
+        for pid in (exclude_pids or [])
+        if _safe_text(pid)
+    }
+
     location_hints = _extract_location_hints(query, df)
     if district is None:
         district = location_hints["district"] or _extract_district_from_query(query)
@@ -1161,6 +1168,8 @@ def rag_retrieve(
             metadata = doc.metadata or {}
             pid = _safe_text(metadata.get("place_id", "")).upper()
             if not pid:
+                continue
+            if pid in exclude_pid_set:
                 continue
             if candidate_pid_set is not None and pid not in candidate_pid_set:
                 continue
@@ -1189,6 +1198,8 @@ def rag_retrieve(
         for idx, pid in enumerate(location_pids):
             pid = _safe_text(pid).upper()
             if not pid:
+                continue
+            if pid in exclude_pid_set:
                 continue
             if candidate_pid_set is not None and pid not in candidate_pid_set:
                 continue

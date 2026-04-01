@@ -71,6 +71,26 @@ REFINE_HINTS = (
     "바꾸",
 )
 
+ALTERNATIVE_HINTS = (
+    "말고는",
+    "말고",
+    "빼고",
+    "제외",
+    "다른 곳",
+    "다른곳",
+    "다른 데",
+    "다른데",
+    "딴 곳",
+    "딴곳",
+    "딴 데",
+    "딴데",
+    "또 다른",
+    "2순위",
+    "차선",
+    "다음 후보",
+    "다른 후보",
+)
+
 
 def resolve_followup(chat_history: list[dict], prompt: str) -> dict:
     prompt = (prompt or "").strip()
@@ -111,6 +131,8 @@ def resolve_followup(chat_history: list[dict], prompt: str) -> dict:
         "active_place_id": last_turn_state.get("active_place_id"),
         "retrieved_pids": last_search_state.get("retrieved_pids", []),
         "search_slots": _extract_search_slots(prompt),
+        "shown_place_ids": list(last_search_state.get("shown_place_ids", []) or []),
+        "excluded_place_ids": list(last_search_state.get("excluded_place_ids", []) or []),
     }
 
     if not source_docs:
@@ -120,6 +142,17 @@ def resolve_followup(chat_history: list[dict], prompt: str) -> dict:
         resolution["intent"] = "doc_lookup"
         resolution["lookup_field"] = lookup_field
         resolution["target_doc"] = target_doc
+        return resolution
+
+    if _is_alternative_request(
+        prompt,
+        has_followup_marker=has_followup_marker,
+        explicit_target_rank=explicit_target_rank,
+    ):
+        resolution["intent"] = "switch_recommendation"
+        resolution["standalone_query"] = last_user_query or prompt
+        resolution["target_doc"] = target_doc
+        resolution["search_slots"] = dict(last_search_state.get("search_slots", {}) or {})
         return resolution
 
     if _is_place_detail(prompt) and (likely_followup or target_doc_rank > 0):
@@ -216,6 +249,8 @@ def _get_last_turn_state(chat_history: list[dict]) -> dict:
                 "active_place_id": turn_meta.get("active_place_id"),
                 "active_place_rank": int(turn_meta.get("active_place_rank", 0) or 0),
                 "search_slots": dict(turn_meta.get("search_slots", {}) or {}),
+                "shown_place_ids": list(turn_meta.get("shown_place_ids", []) or []),
+                "excluded_place_ids": list(turn_meta.get("excluded_place_ids", []) or []),
             }
     return {}
 
@@ -227,13 +262,15 @@ def _get_last_search_state(chat_history: list[dict]) -> dict:
         turn_meta = chat.get("turn_meta") or {}
         intent = turn_meta.get("intent")
         standalone_query = str(turn_meta.get("standalone_query", "")).strip()
-        if intent in {"fresh_search", "refine_search"} and standalone_query:
+        if intent in {"fresh_search", "refine_search", "switch_recommendation"} and standalone_query:
             return {
                 "standalone_query": standalone_query,
                 "active_place_id": turn_meta.get("active_place_id"),
                 "active_place_rank": int(turn_meta.get("active_place_rank", 0) or 0),
                 "retrieved_pids": list(turn_meta.get("retrieved_pids", []) or []),
                 "search_slots": dict(turn_meta.get("search_slots", {}) or {}),
+                "shown_place_ids": list(turn_meta.get("shown_place_ids", []) or []),
+                "excluded_place_ids": list(turn_meta.get("excluded_place_ids", []) or []),
             }
     return {}
 
@@ -317,6 +354,30 @@ def _has_refine_hint(prompt: str) -> bool:
     return any(keyword in normalized for keyword in REFINE_HINTS)
 
 
+def _is_alternative_request(
+    prompt: str,
+    has_followup_marker: bool = False,
+    explicit_target_rank: Optional[int] = None,
+) -> bool:
+    normalized = prompt.strip()
+    if not normalized:
+        return False
+
+    if explicit_target_rank is not None and len(re.sub(r"\s+", "", normalized)) <= 8:
+        return True
+
+    if not any(keyword in normalized for keyword in ALTERNATIVE_HINTS):
+        return False
+
+    if not has_followup_marker and explicit_target_rank is None and len(normalized) > 20:
+        return False
+
+    district = _extract_district(normalized)
+    age_expr = _extract_age_expr(normalized)
+    cleaned = _clean_refine_prompt(normalized, district=district, age_expr=age_expr)
+    return cleaned == ""
+
+
 def _merge_queries(last_query: str, prompt: str, last_slots: Optional[dict] = None) -> str:
     last_query = last_query.strip()
     prompt = prompt.strip()
@@ -375,6 +436,12 @@ def _extract_age_expr(text: str) -> str:
     year_match = re.search(r"(?:만\s*)?\d+\s*(?:세|살)", normalized)
     if year_match:
         return re.sub(r"\s+", "", year_match.group(0))
+    dol_match = re.search(
+        r"(?:만\s*)?(한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열|\d+)\s*돌",
+        normalized,
+    )
+    if dol_match:
+        return re.sub(r"\s+", "", dol_match.group(0))
     return ""
 
 
@@ -411,8 +478,15 @@ def _clean_refine_prompt(prompt: str, district: str = "", age_expr: str = "") ->
         cleaned = _remove_district_tokens(cleaned, district)
     if age_expr:
         cleaned = cleaned.replace(age_expr, " ")
-    for token in ("그럼", "그러면", "대신", "말고", "다른", "다시", "바꾸면", "바꾸고", "바꿔"):
+    for token in (
+        "그럼", "그러면", "대신", "말고는", "말고", "빼고", "제외", "다른", "다시",
+        "바꾸면", "바꾸고", "바꿔", "여기", "거기", "이곳", "그곳", "이 곳", "그 곳",
+        "여긴", "거긴", "또", "후보",
+    ):
         cleaned = cleaned.replace(token, " ")
     cleaned = re.sub(r"[?!.]+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned
+    if cleaned in {"는", "은", "요", "여기 는", "거기 는"}:
+        return ""
+    tokens = [token for token in cleaned.split() if token not in {"는", "은", "요"}]
+    return " ".join(tokens).strip()

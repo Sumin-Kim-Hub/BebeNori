@@ -90,7 +90,7 @@ def get_message_html(role, content, source_docs=None, intent=None):
         if not img_url: img_url = DEFAULT_IMG
         
         # 1. 처음 추천하거나 다른 곳을 추천해달라고 할 때 -> 대형 카드 노출
-        if intent in ["fresh_search", "refine_search"]:
+        if intent in ["fresh_search", "refine_search", "switch_recommendation"]:
             cards_html = "<div style='display: flex; flex-direction: column; gap: 15px; margin-top: 15px;'>"
             raw_feats = doc.get("features", [])
             if isinstance(raw_feats, str): 

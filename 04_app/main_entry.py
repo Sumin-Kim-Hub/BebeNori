@@ -2,6 +2,7 @@ import streamlit as st
 from pathlib import Path
 import sys
 import pandas as pd
+from typing import Optional
 
 try:
     import pysqlite3
@@ -21,7 +22,7 @@ from data_loader import load_places, load_dev
 from backend_core import (
     get_llm_chain, load_or_create_vectorstore, 
     rag_retrieve, build_context, gen_answer, gen_followup_answer,
-    infer_answer_place,
+    infer_answer_place, extract_age_months_from_text,
 )
 from followup_resolver import resolve_followup, format_doc_lookup_answer
 
@@ -62,6 +63,25 @@ def _ordered_source_docs(df: pd.DataFrame, pids: list) -> list:
     by_pid = {row.get("place_id"): row for row in rows}
     return [by_pid[pid] for pid in pids if pid in by_pid]
 
+
+def _get_recent_child_age_months(chat_history: list[dict]) -> Optional[int]:
+    for chat in reversed(chat_history):
+        if chat.get("role") == "assistant":
+            turn_meta = chat.get("turn_meta") or {}
+            value = turn_meta.get("child_age_months")
+            if value is not None:
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    pass
+
+        if chat.get("role") == "user":
+            months = extract_age_months_from_text(chat.get("content", ""))
+            if months is not None:
+                return months
+
+    return None
+
 ui_components.render_sidebar(df)
 for chat in current_session["chat_history"]:
     past_intent = chat.get("turn_meta", {}).get("intent")
@@ -93,13 +113,17 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                         intent = "place_detail"
                         resolution["target_doc"] = resolution["source_docs"][0]
 
-            age_sel = ""
+            child_age_months = extract_age_months_from_text(prompt)
+            if child_age_months is None:
+                child_age_months = _get_recent_child_age_months(current_session["chat_history"][:-1])
             
             response_text, source_pids = "", []
             saved_source_docs = []
             active_place_id = resolution.get("active_place_id")
             active_place_rank = resolution.get("target_doc_rank", 0)
             search_slots = dict(resolution.get("search_slots", {}) or {})
+            if child_age_months is not None:
+                search_slots["child_age_months"] = child_age_months
             
             if intent == "doc_lookup":
                 response_text = format_doc_lookup_answer(resolution.get("target_doc"), resolution.get("lookup_field")) or "관련 정보가 부족해요."
@@ -109,7 +133,22 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             elif intent == "place_detail":
                 target_doc = resolution.get("target_doc")
                 pids = [target_doc.get("place_id")] if target_doc else []
-                ctx = build_context(df, dev_df, pids, age_sel=age_sel, query=prompt)
+                retrieval = rag_retrieve(
+                    vectorstore,
+                    prompt,
+                    df=df,
+                    n=max(len(pids), 1),
+                    return_details=True,
+                    candidate_pids=pids,
+                )
+                ctx = build_context(
+                    df,
+                    dev_df,
+                    pids,
+                    age_months=child_age_months,
+                    query=prompt,
+                    evidence_by_pid=retrieval.get("evidence_by_pid", {}),
+                )
                 
                 # 정수기 확인을 위해 백엔드에서 짤린 특징 100% 강제 주입
                 if target_doc:
@@ -137,8 +176,16 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
             
             else:
                 search_query = resolution.get("standalone_query", prompt)
-                source_pids = rag_retrieve(vectorstore, search_query, df)
-                ctx = build_context(df, dev_df, source_pids, age_sel=age_sel, query=search_query)
+                retrieval = rag_retrieve(vectorstore, search_query, df, return_details=True)
+                source_pids = retrieval.get("pids", [])
+                ctx = build_context(
+                    df,
+                    dev_df,
+                    source_pids,
+                    age_months=child_age_months,
+                    query=search_query,
+                    evidence_by_pid=retrieval.get("evidence_by_pid", {}),
+                )
                 
                 if intent == "refine_search" or len(current_session["chat_history"]) > 3:
                     response_text = gen_followup_answer(llm_chain, prompt, ctx, resolution.get("last_answer", ""))
@@ -164,6 +211,7 @@ if prompt := st.chat_input("이모삼촌에게 무엇이든 물어보세요!"):
                 "intent": intent, "standalone_query": resolution.get("standalone_query", prompt),
                 "active_place_id": active_place_id, "active_place_rank": active_place_rank,
                 "retrieved_pids": source_pids if source_pids else resolution.get("retrieved_pids", []),
+                "child_age_months": child_age_months,
                 "search_slots": search_slots,
             },
             "source_docs": saved_source_docs

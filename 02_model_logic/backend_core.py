@@ -13,7 +13,7 @@ import shutil
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -25,7 +25,6 @@ if str(_DATA_PREP) not in sys.path:
     sys.path.insert(0, str(_DATA_PREP))
 
 from data_loader import (
-    AGE_TO_DEV,
     CHROMA_DIR,
     DISTRICTS,
     FEATURES_CSV,
@@ -60,6 +59,9 @@ INDEX_MANIFEST_NAME = "index_manifest.json"
 NEAR_QUERY_TOKENS = ("근처", "주변", "인근", "가까운", "도보")
 LOCATION_OVERSAMPLE = 12
 LOCATION_HARD_RADIUS_KM = 2.0
+REVIEW_SEARCH_K_MULTIPLIER = 10
+REVIEW_EVIDENCE_LIMIT = 2
+REVIEW_EVIDENCE_CHAR_LIMIT = 140
 GENERIC_PLACE_TOKENS = {
     "서울형",
     "서울형키즈카페",
@@ -69,6 +71,22 @@ GENERIC_PLACE_TOKENS = {
     "시립",
     "일반형",
     "특화형",
+}
+KOREAN_AGE_WORDS = {
+    "한": 1,
+    "하나": 1,
+    "두": 2,
+    "둘": 2,
+    "세": 3,
+    "셋": 3,
+    "네": 4,
+    "넷": 4,
+    "다섯": 5,
+    "여섯": 6,
+    "일곱": 7,
+    "여덟": 8,
+    "아홉": 9,
+    "열": 10,
 }
 
 # --- [LLM 체인 (LangChain ChatOpenAI + ChatPromptTemplate + StrOutputParser)] ---
@@ -662,39 +680,268 @@ def _extract_district_from_query(query: str) -> str:
     return ""
 
 
-def _age_band_from_months(months: int) -> str:
-    if months <= 6:
-        return "0~6개월"
-    if months <= 12:
-        return "6~12개월"
-    if months <= 18:
-        return "12~18개월"
-    if months <= 24:
-        return "18~24개월"
-    if months <= 30:
-        return "24~30개월"
-    if months <= 36:
-        return "30~36개월"
-    return "36개월 이상"
+def _parse_korean_age_word(token: str) -> Optional[int]:
+    return KOREAN_AGE_WORDS.get(_safe_text(token))
 
 
-def _extract_age_selection_from_query(query: str) -> str:
-    for age_option in AGE_TO_DEV:
-        if age_option in query:
-            return age_option
+def extract_age_months_from_text(query: str) -> Optional[int]:
+    text = _safe_text(query)
+    if not text:
+        return None
 
-    month_matches = re.findall(r"(\d+)\s*개월", query)
-    if month_matches:
-        months = max(int(m) for m in month_matches)
-        return _age_band_from_months(months)
+    matches = []
 
-    year_match = re.search(r"(?:만\s*)?(\d+)\s*(?:세|살)", query)
-    if year_match:
-        years = int(year_match.group(1))
-        months = max(years * 12 - 1, 0)
-        return _age_band_from_months(months)
+    for match in re.finditer(r"(만\s*)?(\d+)\s*개월", text):
+        matches.append((match.start(), int(match.group(2))))
 
-    return ""
+    for match in re.finditer(r"(만\s*)?(\d+)\s*(?:세|살)", text):
+        years = int(match.group(2))
+        months = years * 12 if match.group(1) else max(years * 12 - 1, 0)
+        matches.append((match.start(), months))
+
+    for match in re.finditer(r"(만\s*)?(\d+)\s*돌", text):
+        years = int(match.group(2))
+        matches.append((match.start(), years * 12))
+
+    for match in re.finditer(
+        r"(만\s*)?(한|하나|두|둘|세|셋|네|넷|다섯|여섯|일곱|여덟|아홉|열)\s*돌",
+        text,
+    ):
+        years = _parse_korean_age_word(match.group(2))
+        if years is not None:
+            matches.append((match.start(), years * 12))
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda item: item[0])
+    return matches[0][1]
+
+
+def _get_dev_row_for_age(dev_df: Optional[pd.DataFrame], age_months: Optional[int]) -> Optional[pd.Series]:
+    if dev_df is None or dev_df.empty or age_months is None:
+        return None
+
+    min_months = pd.to_numeric(dev_df.get("min_month"), errors="coerce")
+    max_months = pd.to_numeric(dev_df.get("max_month"), errors="coerce")
+    matched = dev_df[(min_months <= age_months) & (max_months >= age_months)]
+    if matched.empty:
+        return None
+
+    return matched.sort_values(["min_month", "max_month"]).iloc[0]
+
+
+def _split_context_terms(value: object) -> list[str]:
+    text = _safe_text(value)
+    if not text:
+        return []
+
+    parts = re.split(r"[|,]", text)
+    terms = []
+    for part in parts:
+        term = part.strip()
+        if not term:
+            continue
+        terms.append(term)
+    return terms
+
+
+def _expand_facility_aliases(term: str) -> list[str]:
+    aliases = []
+    raw = _safe_text(term)
+    if not raw:
+        return aliases
+
+    candidates = {raw}
+    stripped = _strip_parenthetical(raw)
+    if stripped:
+        candidates.add(stripped)
+
+    for inner in _extract_parenthetical_terms(raw):
+        candidates.add(inner)
+        candidates.update(part.strip() for part in re.split(r"[/,]", inner) if part.strip())
+
+    expanded = set()
+    for candidate in candidates:
+        candidate = candidate.strip()
+        if not candidate:
+            continue
+        expanded.add(candidate)
+        if candidate.endswith("존") and len(candidate) > 2:
+            expanded.add(candidate[:-1])
+        if candidate.endswith("세트") and len(candidate) > 3:
+            expanded.add(candidate[:-2].strip())
+        parts = [part.strip() for part in re.split(r"[\s/]+", candidate) if part.strip()]
+        if len(parts) >= 2:
+            expanded.add(parts[0])
+            expanded.add(parts[-1])
+
+    for candidate in expanded:
+        compact = _compact_spaces(candidate)
+        if len(compact) < 2:
+            continue
+        aliases.append(candidate)
+
+    return list(dict.fromkeys(aliases))
+
+
+def _match_dev_facilities_for_place(row, dev_row: Optional[pd.Series]) -> list[str]:
+    if dev_row is None:
+        return []
+
+    place_text = " ".join(
+        part
+        for part in (
+            _safe_text(row.get("official_play_tags", "")),
+            _safe_text(row.get("official_summary", "")),
+            _safe_text(row.get("review_text", "")),
+            _safe_text(row.get("place_name", "")),
+        )
+        if part
+    )
+    if not place_text:
+        return []
+
+    matched_terms = []
+    for facility in _split_context_terms(dev_row.get("matching_facilities", "")):
+        if any(_matches_spaced_phrase(place_text, alias) for alias in _expand_facility_aliases(facility)):
+            matched_terms.append(facility)
+
+    return list(dict.fromkeys(matched_terms))
+
+
+@lru_cache(maxsize=1)
+def _load_review_chunks() -> pd.DataFrame:
+    try:
+        review_df = pd.read_csv(REVIEWS_CSV, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        review_df = pd.read_csv(REVIEWS_CSV, encoding="cp949")
+    except Exception:
+        return pd.DataFrame()
+
+    review_df = review_df.copy()
+    if "chunk_text_for_embedding" not in review_df.columns and "chunk_text" in review_df.columns:
+        review_df["chunk_text_for_embedding"] = review_df["chunk_text"]
+    if "chunk_text" not in review_df.columns and "content" in review_df.columns:
+        review_df["chunk_text"] = review_df["content"]
+
+    if "place_id" in review_df.columns:
+        review_df["place_id"] = review_df["place_id"].fillna("").astype(str).str.strip().str.upper()
+
+    text_columns = [
+        "place_name",
+        "review_title",
+        "chunk_text",
+        "chunk_text_for_embedding",
+        "section_type",
+        "play_tags",
+        "need_tags",
+        "issue_tags",
+        "source_url",
+    ]
+    for column in text_columns:
+        if column not in review_df.columns:
+            review_df[column] = ""
+        review_df[column] = review_df[column].fillna("").astype(str)
+
+    if "chunk_order" in review_df.columns:
+        review_df["chunk_order"] = pd.to_numeric(review_df["chunk_order"], errors="coerce").fillna(0)
+
+    return review_df
+
+
+def _compact_preview_text(value: object, limit: int = REVIEW_EVIDENCE_CHAR_LIMIT) -> str:
+    text = re.sub(r"\s+", " ", _safe_text(value)).strip()
+    if not text:
+        return ""
+    return text[:limit].rstrip() + ("…" if len(text) > limit else "")
+
+
+def _serialize_feature_text(row) -> str:
+    play_tags = ", ".join(_split_context_terms(row.get("official_play_tags", ""))[:5])
+    if play_tags:
+        return play_tags
+    features = row.get("features", [])
+    if isinstance(features, list):
+        return ", ".join(features[:5])
+    return _safe_text(features)
+
+
+def _build_place_vector_content(row) -> str:
+    district = _get_district_value(row)
+    dong = _safe_text(row.get("address_dong", ""))
+    subway_info = _safe_text(row.get("subway_info", ""))
+    location_keywords = ", ".join(_build_row_location_keywords(row))
+    feature_text = _serialize_feature_text(row) or "정보 없음"
+    summary = _safe_text(row.get("official_summary", ""))
+    age_text = _safe_text(row.get("age_text", ""))
+    return (
+        f"장소명: {row.get('place_name')}\n"
+        f"주소: {row.get('address')}\n"
+        f"지역: {district}\n"
+        f"동: {dong}\n"
+        f"지하철: {subway_info}\n"
+        f"위치키워드: {location_keywords}\n"
+        f"이용연령: {age_text}\n"
+        f"놀이/특징: {feature_text}\n"
+        f"공식요약: {summary}"
+    )
+
+
+def _build_review_chunk_vector_content(chunk_row, place_row) -> str:
+    district = _get_district_value(place_row)
+    dong = _safe_text(place_row.get("address_dong", ""))
+    location_keywords = ", ".join(_build_row_location_keywords(place_row))
+    tags = []
+    for label, value in (
+        ("놀이 태그", chunk_row.get("play_tags", "")),
+        ("이용 맥락", chunk_row.get("need_tags", "")),
+        ("주의 태그", chunk_row.get("issue_tags", "")),
+    ):
+        cleaned = _safe_text(value).replace("|", ", ")
+        if cleaned:
+            tags.append(f"{label}: {cleaned}")
+
+    tag_block = "\n".join(tags)
+    if tag_block:
+        tag_block = f"{tag_block}\n"
+
+    return (
+        f"장소명: {chunk_row.get('place_name') or place_row.get('place_name')}\n"
+        f"주소: {place_row.get('address')}\n"
+        f"지역: {district}\n"
+        f"동: {dong}\n"
+        f"위치키워드: {location_keywords}\n"
+        f"리뷰 제목: {chunk_row.get('review_title', '')}\n"
+        f"{tag_block}"
+        f"리뷰 근거: {chunk_row.get('chunk_text_for_embedding') or chunk_row.get('chunk_text')}"
+    )
+
+
+def _build_evidence_entry(doc: Document, score: float) -> dict:
+    metadata = doc.metadata or {}
+    return {
+        "chunk_id": _safe_text(metadata.get("chunk_id", "")),
+        "text": _compact_preview_text(metadata.get("chunk_text", "")),
+        "title": _safe_text(metadata.get("review_title", "")),
+        "section_type": _safe_text(metadata.get("section_type", "")),
+        "play_tags": _safe_text(metadata.get("play_tags", "")),
+        "score": float(score),
+    }
+
+
+def _finalize_evidence_entries(entries: list[dict]) -> list[dict]:
+    deduped = []
+    seen = set()
+    for entry in sorted(entries, key=lambda item: item.get("score", 0.0), reverse=True):
+        key = (entry.get("chunk_id"), entry.get("text"))
+        if key in seen or not entry.get("text"):
+            continue
+        seen.add(key)
+        deduped.append(entry)
+        if len(deduped) >= REVIEW_EVIDENCE_LIMIT:
+            break
+    return deduped
 
 def get_llm_chain():
     api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -772,30 +1019,25 @@ def load_or_create_vectorstore(df, force_rebuild=False):
     print(f"📦 DB 생성 중... ({rebuild_reason})")
 
     docs = []
+    place_rows = {}
 
-    # ⭐ 반드시 df 기준으로 돌아야 함
     for _, row in df.iterrows():
+        pid = _safe_text(row.get("place_id", ""))
+        if not pid:
+            continue
+
+        place_rows[pid] = row
         district = _get_district_value(row)
         dong = _safe_text(row.get("address_dong", ""))
         subway_info = _safe_text(row.get("subway_info", ""))
-        location_keywords = ", ".join(_build_row_location_keywords(row))
         latitude = _safe_float(row.get("latitude", row.get("lat")))
         longitude = _safe_float(row.get("longitude", row.get("lng")))
-        content = f"""
-        장소명: {row.get('place_name')}
-        주소: {row.get('address')}
-        지역: {district}
-        동: {dong}
-        지하철: {subway_info}
-        위치키워드: {location_keywords}
-        특징: {row.get('features')}
-        리뷰: {row.get('review_text')}
-        """
 
         docs.append(Document(
-            page_content=content,
+            page_content=_build_place_vector_content(row),
             metadata={
-                "place_id": row.get("place_id"),
+                "doc_type": "place",
+                "place_id": pid,
                 "district": district,
                 "name": row.get("place_name"),
                 "dong": dong,
@@ -805,6 +1047,43 @@ def load_or_create_vectorstore(df, force_rebuild=False):
                 "longitude": longitude,
             }
         ))
+
+    review_df = _load_review_chunks()
+    if not review_df.empty:
+        for _, chunk_row in review_df.iterrows():
+            pid = _safe_text(chunk_row.get("place_id", ""))
+            place_row = place_rows.get(pid)
+            if not pid or place_row is None:
+                continue
+
+            district = _get_district_value(place_row)
+            dong = _safe_text(place_row.get("address_dong", ""))
+            subway_info = _safe_text(place_row.get("subway_info", ""))
+            latitude = _safe_float(place_row.get("latitude", place_row.get("lat")))
+            longitude = _safe_float(place_row.get("longitude", place_row.get("lng")))
+
+            docs.append(Document(
+                page_content=_build_review_chunk_vector_content(chunk_row, place_row),
+                metadata={
+                    "doc_type": "review_chunk",
+                    "chunk_id": _safe_text(chunk_row.get("chunk_id", "")),
+                    "place_id": pid,
+                    "district": district,
+                    "name": place_row.get("place_name"),
+                    "dong": dong,
+                    "subway_info": subway_info,
+                    "location_blob": _build_location_blob(place_row),
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "review_title": _safe_text(chunk_row.get("review_title", "")),
+                    "chunk_text": _safe_text(chunk_row.get("chunk_text", "")),
+                    "section_type": _safe_text(chunk_row.get("section_type", "")),
+                    "play_tags": _safe_text(chunk_row.get("play_tags", "")),
+                    "need_tags": _safe_text(chunk_row.get("need_tags", "")),
+                    "issue_tags": _safe_text(chunk_row.get("issue_tags", "")),
+                    "source_url": _safe_text(chunk_row.get("source_url", "")),
+                }
+            ))
 
     vectorstore = Chroma.from_documents(
         documents=docs,
@@ -835,7 +1114,9 @@ def rag_retrieve(
     df:          Optional[pd.DataFrame] = None,
     district:    Optional[str] = None,
     n:           int = 4,
-) -> list:
+    return_details: bool = False,
+    candidate_pids: Optional[list[str]] = None,
+) -> Union[list, dict]:
     """
     벡터 유사도 검색으로 관련 장소 ID 리스트를 반환합니다.
 
@@ -846,10 +1127,21 @@ def rag_retrieve(
         n:           반환할 최대 결과 수
 
     Returns:
-        list[str]: place_id 리스트
+        list[str] | dict: place_id 리스트 또는 retrieval 상세 정보
     """
     if vectorstore is None:
-        return []
+        return {"pids": [], "evidence_by_pid": {}} if return_details else []
+
+    candidate_pid_set = None
+    if candidate_pids:
+        candidate_pid_set = {
+            _safe_text(pid).upper()
+            for pid in candidate_pids
+            if _safe_text(pid)
+        }
+        if not candidate_pid_set:
+            return {"pids": [], "evidence_by_pid": {}} if return_details else []
+
     location_hints = _extract_location_hints(query, df)
     if district is None:
         district = location_hints["district"] or _extract_district_from_query(query)
@@ -859,43 +1151,95 @@ def rag_retrieve(
         else None
     )
     try:
-        search_k = max(n * 4, LOCATION_OVERSAMPLE)
+        search_k = max(n * REVIEW_SEARCH_K_MULTIPLIER, LOCATION_OVERSAMPLE * 2)
         results = vectorstore.similarity_search(query, k=search_k, filter=filter_dict)
         location_pids = _rank_location_candidates(df, location_hints)
-        scored = []
         place_coords = _build_location_index(df).get("place_coords", {})
-        for rank, doc in enumerate(results, start=1):
-            score = _score_doc(doc, rank, location_hints, place_coords)
-            scored.append((score, doc))
+        place_buckets = {}
 
-        seen = set()
-        pids = []
-        for pid in location_pids:
-            if pid in seen:
+        for rank, doc in enumerate(results, start=1):
+            metadata = doc.metadata or {}
+            pid = _safe_text(metadata.get("place_id", "")).upper()
+            if not pid:
                 continue
-            seen.add(pid)
-            pids.append(pid)
-            if len(pids) >= n:
-                return pids
-        for _, doc in sorted(scored, key=lambda item: item[0], reverse=True):
-            pid = doc.metadata.get("place_id")
-            if not pid or pid in seen:
+            if candidate_pid_set is not None and pid not in candidate_pid_set:
                 continue
-            seen.add(pid)
-            pids.append(pid)
-            if len(pids) >= n:
-                break
+
+            doc_type = _safe_text(metadata.get("doc_type", "place")) or "place"
+            score = _score_doc(doc, rank, location_hints, place_coords)
+            if doc_type == "review_chunk":
+                score += 0.75
+
+            bucket = place_buckets.setdefault(
+                pid,
+                {
+                    "place_score": 0.0,
+                    "chunk_scores": [],
+                    "location_boost": 0.0,
+                    "evidence": [],
+                },
+            )
+
+            if doc_type == "place":
+                bucket["place_score"] = max(bucket["place_score"], score)
+            else:
+                bucket["chunk_scores"].append(score)
+                bucket["evidence"].append(_build_evidence_entry(doc, score))
+
+        for idx, pid in enumerate(location_pids):
+            pid = _safe_text(pid).upper()
+            if not pid:
+                continue
+            if candidate_pid_set is not None and pid not in candidate_pid_set:
+                continue
+            bucket = place_buckets.setdefault(
+                pid,
+                {
+                    "place_score": 0.0,
+                    "chunk_scores": [],
+                    "location_boost": 0.0,
+                    "evidence": [],
+                },
+            )
+            bucket["location_boost"] = max(
+                bucket["location_boost"],
+                max((LOCATION_OVERSAMPLE - idx) * 0.8, 0.0),
+            )
+
+        ranked_pids = []
+        for pid, bucket in place_buckets.items():
+            top_chunk_scores = sorted(bucket["chunk_scores"], reverse=True)[:REVIEW_EVIDENCE_LIMIT]
+            final_score = (
+                bucket["place_score"]
+                + sum(top_chunk_scores) * 0.85
+                + bucket["location_boost"]
+            )
+            ranked_pids.append((final_score, pid))
+
+        ranked_pids.sort(key=lambda item: item[0], reverse=True)
+        pids = [pid for _, pid in ranked_pids[:n]]
+        evidence_by_pid = {
+            pid: _finalize_evidence_entries(place_buckets.get(pid, {}).get("evidence", []))
+            for pid in pids
+        }
+
+        if return_details:
+            return {
+                "pids": pids,
+                "evidence_by_pid": evidence_by_pid,
+            }
         return pids
     except Exception:
-        return []
+        return {"pids": [], "evidence_by_pid": {}} if return_details else []
 
 
 def build_context(
     df:      pd.DataFrame,
     dev_df:  pd.DataFrame,
     pids:    list,
-    age_sel: str = "",
+    age_months: Optional[int] = None,
     query:   str = "",
+    evidence_by_pid: Optional[dict] = None,
 ) -> str:
     """
     검색된 장소 + 발달 정보를 LLM 에 전달할 컨텍스트 문자열로 조합합니다.
@@ -904,33 +1248,69 @@ def build_context(
         df:      load_places() DataFrame
         dev_df:  load_dev() DataFrame
         pids:    rag_retrieve() 가 반환한 place_id 리스트
-        age_sel: 사용자가 선택한 개월 수 문자열 (예: "18~24개월")
+        age_months: 사용자 질문/세션에서 추정한 아이 월령
+        evidence_by_pid: 검색 단계에서 선별된 장소별 리뷰 근거
 
     Returns:
         str: LLM 프롬프트용 컨텍스트
     """
-    if not age_sel:
-        age_sel = _extract_age_selection_from_query(query)
+    if age_months is None:
+        age_months = extract_age_months_from_text(query)
 
-    rows  = df[df["place_id"].isin(pids)]
+    rows = df[df["place_id"].isin(pids)]
+    rows_by_pid = {
+        _safe_text(row.get("place_id", "")).upper(): row
+        for _, row in rows.iterrows()
+    }
+    dev_row = _get_dev_row_for_age(dev_df, age_months)
+    evidence_by_pid = evidence_by_pid or {}
     parts = []
-    for _, r in rows.iterrows():
+    for raw_pid in pids:
+        pid = _safe_text(raw_pid).upper()
+        r = rows_by_pid.get(pid)
+        if r is None:
+            continue
         district = _get_district_value(r)
-        feat_str = ", ".join(r["features"][:5]) or "정보 없음"
+        feat_str = _serialize_feature_text(r) or "정보 없음"
 
-        # 발달 데이터 연결성 강화를 위한 코드
+        matched_facilities = _match_dev_facilities_for_place(r, dev_row)
         dev_hint = ""
-        if dev_df is not None:
-            for _, d in dev_df.iterrows():
-                if any(f in str(d.get("matching_facilities", "")) for f in r["features"]):
-                    dev_hint = str(d.get("keywords", ""))
-                    break
-        # 추가 코드 여기까지
+        if dev_row is not None:
+            dev_keywords = _safe_text(dev_row.get("keywords", ""))
+            if matched_facilities:
+                dev_hint = (
+                    f"{dev_keywords} | 이곳에서는 "
+                    f"{', '.join(matched_facilities[:3])} 같은 놀이가 잘 맞아요."
+                )
+            elif dev_keywords:
+                dev_hint = f"{dev_keywords} | 이 월령대 아이가 몰입하기 쉬운 놀이가 있는지 함께 봐주세요."
         
         park_str = park_short(str(r.get("parking_info", "")))
         res_url  = str(r.get("reservation_url", "")).strip() or PUBLIC_BOOK
         tip      = "미끄럼방지 양말 필수" if r.get("needs_socks") else ""
         crowded  = "주말 혼잡 주의" if r.get("is_crowded") else "예약 확인 권장"
+        evidence_items = evidence_by_pid.get(pid, [])
+        evidence_lines = []
+        for idx, item in enumerate(evidence_items[:REVIEW_EVIDENCE_LIMIT], start=1):
+            tag_bits = []
+            if item.get("section_type"):
+                tag_bits.append(item["section_type"])
+            if item.get("play_tags"):
+                tag_bits.append(item["play_tags"].replace("|", ", "))
+            tag_prefix = f"[{' / '.join(tag_bits[:2])}] " if tag_bits else ""
+            evidence_lines.append(
+                f"  리뷰근거{idx}: {tag_prefix}{item.get('text', '')}"
+            )
+
+        if not evidence_lines:
+            fallback_review = _compact_preview_text(r.get("review_text", ""), limit=REVIEW_EVIDENCE_CHAR_LIMIT)
+            if fallback_review:
+                evidence_lines.append(f"  리뷰요약: {fallback_review}")
+
+        evidence_block = ""
+        if evidence_lines:
+            evidence_block = "\n" + "\n".join(evidence_lines)
+
         parts.append(
             f"[{r['place_name']}]\n"
             f"  위치: {district} {r['address']}\n"
@@ -940,22 +1320,30 @@ def build_context(
             f"  특징: {feat_str}\n"
             f"  방문팁: {tip}\n"
             f"  예약: {res_url}\n"
-            f"  발달: {dev_hint}\n"
-            f"  리뷰: {str(r['review_text'])[:280]}"
+            f"  발달포인트: {dev_hint}"
+            + evidence_block
         )
 
-    dev_age = AGE_TO_DEV.get(age_sel, "")
     dev_str = ""
-    if dev_df is not None and dev_age:
-        drow = dev_df[dev_df["age"] == dev_age]
-        if not drow.empty:
-            row = drow.iloc[0]
-            dev_str = (
-                f"\n[발달 정보 — {dev_age}개월]\n"
-                f"  대근육: {str(row.get('gross_motor_skills',''))[:90]}\n"
-                f"  소근육: {str(row.get('fine_motor_skills',''))[:90]}\n"
-                f"  언어:   {str(row.get('language_development',''))[:90]}\n"
-                f"  인지:   {str(row.get('cognitive_development',''))[:90]}\n"
-                f"  사회성: {str(row.get('social_development',''))[:90]}"
-            )
-    return "\n\n".join(parts) + dev_str
+    if dev_row is not None:
+        age_label = _safe_text(dev_row.get("age", ""))
+        facilities = ", ".join(_split_context_terms(dev_row.get("matching_facilities", ""))[:5])
+        month_label = f"{age_months}개월" if age_months is not None else "월령 정보 미상"
+        dev_str = (
+            f"[아이 발달 프로필]\n"
+            f"  추정 월령: {month_label}\n"
+            f"  참고 구간: {age_label}개월\n"
+            f"  발달 키워드: {str(dev_row.get('keywords',''))[:90]}\n"
+            f"  잘 맞는 놀이: {facilities}\n"
+            f"  대근육: {str(dev_row.get('gross_motor_skills',''))[:90]}\n"
+            f"  소근육: {str(dev_row.get('fine_motor_skills',''))[:90]}\n"
+            f"  언어:   {str(dev_row.get('language_development',''))[:90]}\n"
+            f"  인지:   {str(dev_row.get('cognitive_development',''))[:90]}\n"
+            f"  사회성: {str(dev_row.get('social_development',''))[:90]}"
+        )
+
+    context_blocks = []
+    if dev_str:
+        context_blocks.append(dev_str)
+    context_blocks.extend(parts)
+    return "\n\n".join(context_blocks)
